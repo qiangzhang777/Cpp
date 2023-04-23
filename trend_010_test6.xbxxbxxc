@@ -1,0 +1,2052 @@
+# !/usr/bin python3
+# -*- encoding:utf-8 -*-
+# @Author : Samzhang
+# @File : etf1.11.py
+# @Time : 2022/1/11 6:56
+
+import requests as req
+import httpx
+import asyncio
+import re
+import pandas as pd
+import time
+import tushare as ts
+import pymongo as pm
+from multiprocessing import Process
+from multiprocessing import Queue
+import pyautogui as pg
+from selenium import webdriver
+import tkinter as tk
+import math
+import random
+import os
+import datetime
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
+from proxy_url import Proxy_url
+from logger import *
+import threading as thr
+from auto_login import *
+import json
+import talib
+import numpy
+from send_2_phone import *
+import copy
+import pickle
+import shelve2
+import asyncio
+
+
+class trend_one:
+    def __init__(self, code, obj):
+        self.code = code
+
+        # 获取当前执行文件的名称
+        self.file_name = obj.file_name
+
+        # 设置交易时间
+        self.today = obj.today
+        self.yestoday = obj.yestoday
+
+        # 连接mongoDB
+        self.myclient = pm.MongoClient("mongodb://localhost:27017/")
+        self.fd = self.myclient["freedom"]
+
+        self.run_type = obj.run_type
+        self.logger = obj.logger
+
+        # 获取公共数据
+        self.trade_lock = obj.trade_lock
+
+        self.dapan = obj.dapan
+        self.dapan_yes1_macd = obj.dapan_yes1_macd
+        self.dapan_macd_is_get_smaller = obj.dapan_macd_is_get_smaller
+        self.dapan_yes1_beili = obj.dapan_yes1_beili
+
+        self.trend_nums = obj.trend_nums
+        self.all_cangwei = obj.all_cangwei
+        self.bt1_nums = obj.bt1_nums
+        self.bt2_nums = obj.bt2_nums
+        self.bt3_nums = obj.bt3_nums
+
+        self.bt1_codes_lst = obj.bt1_codes_lst
+        self.bt2_codes_lst = obj.bt2_codes_lst
+        self.bt3_codes_lst = obj.bt3_codes_lst
+        self.bt4_codes_lst = obj.bt4_codes_lst
+
+        if self.run_type == 'backtest':
+            self.trend_rec = self.fd[self.file_name + 'trend_rec']
+            self.hasBuy = self.fd[self.file_name + 'trend_has_buy']
+            self.basic_data_store = self.fd[self.file_name + 'trend__basic_data']
+            self.trend_reality = self.fd[self.file_name + 'trend_reality']
+
+        elif self.run_type == 'trading':
+            self.trend_rec = self.fd['trend_rec']
+            self.hasBuy = self.fd['trend_has_buy']
+            self.basic_data_store = self.fd['trend__basic_data']
+            self.trend_reality = self.fd['trend_reality']
+
+            self.trader = obj.trader
+
+        # 捕捉最低和最高价格临时记录字典变量
+        self.catch_lowest = pd.Series(dtype='float64')
+        self.catch_highest = pd.Series(dtype='float64')
+        self.beili = obj.code_ma[self.code]['beili']
+        self.trd_days = obj.code_ma[self.code]['trd_days']
+        self.sum_ma4 = obj.code_ma[self.code]['sum_ma4']
+        self.sum_ma5 = obj.code_ma[self.code]['sum_ma5']
+        self.sum_ma6 = obj.code_ma[self.code]['sum_ma6']
+        self.sum_ma7 = obj.code_ma[self.code]['sum_ma7']
+        self.sum_ma8 = obj.code_ma[self.code]['sum_ma8']
+        self.yes2_ma5 = obj.code_ma[self.code]['yes2_ma5']
+        self.yes1_ma5 = obj.code_ma[self.code]['yes1_ma5']
+        self.yes1_ma4 = obj.code_ma[self.code]['yes1_ma4']
+        self.yes2_ma4 = obj.code_ma[self.code]['yes2_ma4']
+        self.yes1_ma6 = obj.code_ma[self.code]['yes1_ma6']
+        self.yes2_ma6 = obj.code_ma[self.code]['yes2_ma6']
+        self.yes1_ma7 = obj.code_ma[self.code]['yes1_ma7']
+        self.yes2_ma7 = obj.code_ma[self.code]['yes2_ma7']
+        self.yes1_ma8 = obj.code_ma[self.code]['yes1_ma8']
+        self.yes2_ma8 = obj.code_ma[self.code]['yes2_ma8']
+        self.yes1_close = obj.code_ma[self.code]['yes1_close']
+        self.yes2_close = obj.code_ma[self.code]['yes2_close']
+        self.yes1_lowest = obj.code_ma[self.code]['yes1_lowest']
+        self.yes2_lowest = obj.code_ma[self.code]['yes2_lowest']
+        self.yes1_highest = obj.code_ma[self.code]['yes1_highest']
+        self.yes2_highest = obj.code_ma[self.code]['yes2_highest']
+
+        self.yes1_macd = obj.code_ma[self.code]['yes1_macd']
+        self.yes2_macd = obj.code_ma[self.code]['yes2_macd']
+
+        self.trend3 = obj.code_ma[self.code]['trend3']
+        self.trend4 = obj.code_ma[self.code]['trend4']
+        self.trend5 = obj.code_ma[self.code]['trend5']
+        self.trend6 = obj.code_ma[self.code]['trend6']
+
+        self.trend8 = obj.code_ma[self.code]['trend8']
+        self.trend9 = obj.code_ma[self.code]['trend9']
+        self.trend10 = obj.code_ma[self.code]['trend10']
+
+        self.trend12 = obj.code_ma[self.code]['trend12']
+        self.trend13 = obj.code_ma[self.code]['trend13']
+        self.trend14 = obj.code_ma[self.code]['trend14']
+
+        self.trend20 = obj.code_ma[self.code]['trend20']
+        self.trend50 = obj.code_ma[self.code]['trend50']
+
+        # 临时存储极值
+        self.lowest_price = 1000
+        self.highest_price = 0
+        # 记录清空标记
+        self.clean_flag = False
+
+        # 初始话ser和lastreq
+        self.ser = pd.Series(dtype='float64')
+        self.lastreq = {}
+
+        self.isAppear_top = False
+
+        # 设置最大仓位
+        self.allow_all_topTradeMoney = obj.allow_all_topTradeMoney
+        self.per_top_money = obj.per_top_money
+
+        self.pct_sh = 0
+        self.pct_sz = 0
+
+    async def jk_buy(self, lastreq, curr_time):
+        if not lastreq:
+            return 0
+
+        try:
+            # 数据记录
+            # ---------------------------------------------------------------------------------------
+            # 判断当前价格是否低于最低价格，如果低于最低价格，那么清空该字典，然后再插入最低价,并从最低价开始记录
+            try:
+                today_lowest = lastreq['today_lowest']
+                curr_price = lastreq['curr_price']
+            except Exception as e:
+                self.logger.error(f"lastreq:{lastreq}, {e}")
+            # 捕捉最小值，跟踪反弹
+            try:
+                if self.lowest_price > today_lowest:
+                    self.lowest_price = today_lowest
+                    self.catch_lowest = pd.Series(dtype='float64')
+                    self.catch_lowest[curr_time] = today_lowest  # self.logger.info(f"lowest_point!!!: {self.lowest_price}")  # self.logger.debug(f"{self.code} catch_lowest:{self.catch_lowest}")
+                else:
+                    self.catch_lowest[curr_time] = curr_price
+
+                # self.logger.debug(f"{self.code} catch_lowest:{self.catch_lowest}")
+            except Exception as e:
+                self.logger.error(e)
+            # 判断是否跳出交易
+            # ---------------------------------------------------------------------------------------
+            # 如果大盘不好，且个股macd在减少，且昨日跌，不买
+            if self.yes1_macd < self.yes2_macd and self.yes1_close < self.yes2_close and (self.dapan_yes1_macd <= 10 or (self.dapan_yes1_macd <= 15 and self.dapan_macd_is_get_smaller) or self.dapan_yes1_beili == 'top'):
+                return 0
+
+            # 判断当前价格是否有效
+            if curr_price == 0:
+                return 0
+            # print('1:::', time.time()-sta)
+            try:
+                # 计算当前ma5
+                # self.curr_ma5 = (self.sum_ma4 + curr_price) / 5
+                self.curr_ma6 = (self.sum_ma5 + curr_price) / 6
+                self.curr_ma7 = (self.sum_ma6 + curr_price) / 7
+                self.curr_ma8 = (self.sum_ma7 + curr_price) / 8
+
+                # self.logger.debug(f"{self.code} self.code_ma:{self.code_ma}")
+            except Exception as e:
+                self.logger.error(e)
+
+            # 原：判断是否出现顶背离
+            # top_beili_cond1 = (self.yes2_close >= self.yes1_close or self.yes2_lowest >= self.yes1_lowest or self.yes2_highest >= self.yes1_highest or self.yes1_lowest > curr_price)
+            # top_beili_cond2 = (self.yes1_ma8 > curr_price or self.yes1_ma7 > curr_price or self.yes1_ma6 > curr_price or self.yes1_ma5 > curr_price or self.yes1_ma4 > curr_price)
+            # top_beili_cond3 = (self.yes1_ma7 > self.yes2_ma7 or self.yes1_ma6 > self.yes2_ma6 or self.yes1_ma8 > self.yes2_ma8 or self.yes1_ma6 < self.curr_ma6 or self.yes1_ma7 < self.curr_ma7 or self.yes1_ma8 < self.curr_ma8)
+            # 是否是假底背离，继续下跌
+            # top_beili_cond4 = ((self.yes1_ma7 < self.yes2_ma7 and self.yes1_ma6 < self.yes2_ma6 and self.yes1_ma8 < self.yes2_ma8) or (self.yes1_ma6 > self.curr_ma6 and self.yes1_ma7 > self.curr_ma7 and self.yes1_ma8 > self.curr_ma8))
+            #
+            # if top_beili_cond1 and top_beili_cond2 and (top_beili_cond3 or top_beili_cond4):
+            #     self.isAppear_top = True
+
+            # 对齐：bt112_2.py
+            top_beili_cond1 = not (self.yes2_lowest < self.yes1_lowest and self.yes2_highest < self.yes1_highest)
+            top_beili_cond2 = (self.yes1_ma7 > self.yes2_ma7 or self.yes1_ma6 > self.yes2_ma6 or self.yes1_ma8 > self.yes2_ma8)
+            top_beili_cond3 = (self.yes1_ma4 > curr_price or self.yes1_ma5 > curr_price or self.yes1_ma6 > curr_price or self.yes1_ma7 > curr_price)
+            if top_beili_cond1 and top_beili_cond2 and top_beili_cond3:
+                # self.isAppear_top = True
+                return 0
+
+            # print('2:::', time.time()-sta)
+
+            # 如果最近一条记录是top，那么跳过买动作
+            if self.isAppear_top:
+                return 0
+
+            # 如果你是底部，但是现在价格低于了这个底部，那就不能买，应该全卖出
+            if self.yes1_lowest > curr_price:
+                return 0
+
+            # 设置购买金额
+            # ---------------------------------------------------------------------------------------
+            if self.yes1_macd >= 0.011 and (self.yes2_lowest < self.yes1_lowest and self.yes2_highest < self.yes1_highest):
+                pass
+            else:
+                return 0
+
+            # 买入监控
+            # ---------------------------------------------------------------------------------------
+            buy_cond1 = (len(self.catch_lowest) > 1)
+            buy_cond2 = (self.catch_lowest.iloc[0] == today_lowest)
+            buy_cond3 = (self.catch_lowest.max() == self.catch_lowest.iloc[-1])
+            buy_cond4 = (self.catch_lowest.iloc[-1] - today_lowest) / today_lowest >= 0.003
+
+            # print('3:::', time.time()-sta)
+
+            # 如果当前记录长度大于1，且最新进场价格大于第一个价格(最低价格)，那么买入？
+            if buy_cond1 and buy_cond2 and buy_cond3 and buy_cond4 and ((curr_time.hour == 9 and curr_time.minute >= 31) or curr_time.hour >= 10):
+
+                # 根据标的价位设定入场目标
+                act = 'buy'
+
+                # 更新all_cangwei
+                self.update_all_cangwei()
+
+                # 因为整体仓位达到上限，导致不能交易
+                if self.all_cangwei >= self.allow_all_topTradeMoney:
+                    return 0
+
+                # 查询bt购买情况，设置购买金额
+                self.get_bts()
+
+                # if self.bt1_nums > 8 and (self.code not in self.bt1_codes_lst):
+                #     return 0
+                # if self.bt2_nums > 4 and (self.code not in self.bt2_codes_lst):
+                #     return 0
+                # if self.bt3_nums > 2 and (self.code not in self.bt3_codes_lst):
+                #     return 0
+
+                if self.first_buy_nums <= 12:
+                    if self.dapan_yes1_macd <= 10 or (self.dapan_yes1_macd <= 15 and self.dapan_macd_is_get_smaller) or self.dapan_yes1_beili == 'top':
+                        self.money1 = 0
+                        self.money2 = self.per_top_money * 4
+                        self.money3 = self.per_top_money * 8
+                        self.money4 = 0
+                        self.money5 = 0
+                    elif ((self.dapan_yes1_macd > 15 and (not self.dapan_macd_is_get_smaller)) or self.dapan_yes1_beili == 'bottom') and self.yes1_macd > self.yes2_macd:
+                        self.money1 = self.per_top_money * 8
+                        self.money2 = self.per_top_money * 8
+                        self.money3 = 0
+                        self.money4 = 0
+                        self.money5 = 0
+                    else:
+                        self.money1 = self.per_top_money * 4
+                        self.money2 = self.per_top_money * 8
+                        self.money3 = 0
+                        self.money4 = 0
+                        self.money5 = 0
+                elif self.first_buy_nums <= 20:
+                    if self.dapan_yes1_macd <= 10 or (self.dapan_yes1_macd <= 15 and self.dapan_macd_is_get_smaller) or self.dapan_yes1_beili == 'top':
+                        self.money1 = 0
+                        self.money2 = self.per_top_money * 3
+                        self.money3 = self.per_top_money * 6
+                        self.money4 = 0
+                        self.money5 = 0
+                    elif ((self.dapan_yes1_macd > 15 and (not self.dapan_macd_is_get_smaller)) or self.dapan_yes1_beili == 'bottom') and self.yes1_macd > self.yes2_macd:
+                        self.money1 = self.per_top_money * 6
+                        self.money2 = self.per_top_money * 6
+                        self.money3 = 0
+                        self.money4 = 0
+                        self.money5 = 0
+                    else:
+                        self.money1 = self.per_top_money * 3
+                        self.money2 = self.per_top_money * 6
+                        self.money3 = 0
+                        self.money4 = 0
+                        self.money5 = 0
+                else:
+                    if self.dapan_yes1_macd <= 10 or (self.dapan_yes1_macd <= 15 and self.dapan_macd_is_get_smaller) or self.dapan_yes1_beili == 'top':
+                        self.money1 = 0
+                        self.money2 = self.per_top_money * 2
+                        self.money3 = self.per_top_money * 4
+                        self.money4 = 0
+                        self.money5 = 0
+                    elif ((self.dapan_yes1_macd > 15 and (not self.dapan_macd_is_get_smaller)) or self.dapan_yes1_beili == 'bottom') and self.yes1_macd > self.yes2_macd:
+                        self.money1 = self.per_top_money * 4
+                        self.money2 = self.per_top_money * 4
+                        self.money3 = 0
+                        self.money4 = 0
+                        self.money5 = 0
+                    else:
+                        self.money1 = self.per_top_money * 2
+                        self.money2 = self.per_top_money * 4
+                        self.money3 = 0
+                        self.money4 = 0
+                        self.money5 = 0
+
+                # 查询时间
+                hasBuy = self.hasBuy.count_documents({'code': self.code, 'buy_date': self.today})
+                luocha = 0.0046
+
+                if hasBuy == 0 and act == 'buy':
+                    if self.first_buy_nums > 28:
+                        return 0
+                    try:
+                        money = self.money1
+
+                        if money + self.all_cangwei > self.allow_all_topTradeMoney and self.all_cangwei < self.allow_all_topTradeMoney:
+                            money = self.allow_all_topTradeMoney - self.all_cangwei
+
+                        # 计算成本单价
+                        num = (round(money / curr_price / 100) * 100)
+
+                        if num == 0 and money != 0:
+                            num = 100
+                            buyMoney = num * curr_price
+                            cost = (buyMoney + 20) / num
+                        elif num == 0 and money == 0:
+                            buyMoney = 0
+                            cost = 0
+                        else:
+                            buyMoney = num * curr_price
+                            cost = (buyMoney + 20) / num
+
+                        bt = 1
+
+                        self.hasBuy.insert_one({'code': self.code, 'price': curr_price, 'time': str(curr_time), 'buy_date': self.today, 'bt': bt, 'money': buyMoney, 'isSold': 0, 'cost': cost, 'num': num, 'pct_bt': 0, 'yingkui': 0})
+
+                        # 更新仓位情况
+                        self.all_cangwei += buyMoney
+
+                        # self.autoBuy(ndict, money, 'sale1')
+                        buy_price = curr_price + 0.01
+                        if money != 0:
+                            if self.run_type == 'trading':
+                                with self.trade_lock:
+                                    res = self.trader.auto_buy_session(self.code, buy_price, num)
+                            else:
+                                res = 'backtest'
+                            self.logger.info(self.code + ' bt1买入, 单价:' + str(buy_price) + ' 数量:' + str(num) + ' 返回结果：' + str(res))
+
+                        self.catch_lowest = pd.Series(dtype='float64')
+
+                    except Exception as e:
+                        self.logger.error(f"error: {self.code}, {e}")
+
+                elif hasBuy == 1 and act == 'buy':
+
+                    # 判断间隔时间
+                    try:
+                        res = self.hasBuy.find_one({'code': self.code, 'buy_date': self.today, 'bt': 1})
+                        t1 = datetime.datetime.strptime(res['time'][0:19], '%Y-%m-%d %H:%M:%S')
+
+                        if (curr_time - t1).total_seconds() > 480 and (res['price'] - curr_price) / res['price'] >= luocha:
+
+                            money = self.money2
+                            if money + self.all_cangwei > self.allow_all_topTradeMoney and self.all_cangwei < self.allow_all_topTradeMoney:
+                                money = self.allow_all_topTradeMoney - self.all_cangwei
+
+                            # 计算成本单价
+                            num = (round(money / curr_price / 100) * 100)
+
+                            if num == 0 and money != 0:
+                                num = 100
+                                buyMoney = num * curr_price
+                                cost = (buyMoney + 20) / num
+                            elif num == 0 and money == 0:
+                                buyMoney = 0
+                                cost = 0
+                            else:
+                                buyMoney = num * curr_price
+                                cost = (buyMoney + 20) / num
+
+                            bt = 2
+                            self.hasBuy.insert_one({'code': self.code, 'price': curr_price, 'time': str(curr_time), 'buy_date': self.today, 'bt': bt, 'money': buyMoney, 'isSold': 0, 'cost': cost, 'num': num, 'pct_bt': 0, 'yingkui': 0})
+
+                            # 更新仓位情况
+                            self.all_cangwei += buyMoney
+
+                            # self.autoBuy(ndict, money, 'sale1')
+                            buy_price = curr_price + 0.01
+
+                            if self.run_type == 'trading':
+                                with self.trade_lock:
+                                    # res = self.trader.auto_buy_chrome(self.code, buy_price, num)
+                                    res = self.trader.auto_buy_session(self.code, buy_price, num)
+                                    self.logger.info(self.code + ' bt2买入, 单价:' + str(buy_price) + ' 数量:' + str(num) + ' 返回结果：' + str(res))
+
+                            else:
+                                res = 'backtest'
+                                self.logger.info(self.code + ' bt2买入, 单价:' + str(buy_price) + ' 数量:' + str(num) + ' 返回结果：' + str(res))
+
+                            self.catch_lowest = pd.Series(dtype='float64')
+                    except Exception as e:
+                        self.logger.error(f"error: {self.code}, {e}")
+
+                elif hasBuy == 2 and act == 'buy':
+
+                    money = self.money3
+
+                    if money == 0:
+                        return 0
+
+                    # 判断间隔时间
+                    try:
+                        res = self.hasBuy.find_one({'code': self.code, 'buy_date': self.today, 'bt': 2})
+                        t1 = datetime.datetime.strptime(res['time'][0:19], '%Y-%m-%d %H:%M:%S')
+
+                        if (curr_time - t1).total_seconds() > 480 and (res['price'] - curr_price) / res['price'] >= luocha:
+
+                            if money + self.all_cangwei > self.allow_all_topTradeMoney and self.all_cangwei < self.allow_all_topTradeMoney:
+                                money = self.allow_all_topTradeMoney - self.all_cangwei
+
+                            # 计算成本单价
+                            num = (round(money / curr_price / 100) * 100)
+
+                            if num == 0 and money != 0:
+                                num = 100
+                                buyMoney = num * curr_price
+                                cost = (buyMoney + 20) / num
+                            elif num == 0 and money == 0:
+                                buyMoney = 0
+                                cost = 0
+                            else:
+                                buyMoney = num * curr_price
+                                cost = (buyMoney + 20) / num
+
+                            bt = 3
+                            self.hasBuy.insert_one({'code': self.code, 'price': curr_price, 'time': str(curr_time), 'buy_date': self.today, 'bt': bt, 'money': buyMoney, 'isSold': 0, 'cost': cost, 'num': num, 'pct_bt': 0, 'yingkui': 0})
+
+                            # 更新仓位情况
+                            self.all_cangwei += buyMoney
+
+                            # self.autoBuy(ndict, money, 'sale1')
+                            buy_price = curr_price + 0.01
+                            if self.run_type == 'trading':
+                                with self.trade_lock:
+                                    # res = self.trader.auto_buy_chrome(self.code, buy_price, num)
+                                    res = self.trader.auto_buy_session(self.code, buy_price, num)
+                                    self.logger.info(self.code + ' bt3买入, 单价:' + str(buy_price) + ' 数量:' + str(num) + ' 返回结果：' + str(res))
+                            else:
+                                res = 'backtest'
+
+                            self.catch_lowest = pd.Series(dtype='float64')
+                    except Exception as e:
+                        raise e
+                        self.logger.error(f"error: {self.code}, {e}")
+
+                elif hasBuy == 3 and act == 'buy':
+
+                    money = self.money4
+
+                    if money == 0:
+                        return 0
+
+                    # 判断间隔时间
+                    try:
+                        res = self.hasBuy.find_one({'code': self.code, 'buy_date': self.today, 'bt': 3})
+                        t1 = datetime.datetime.strptime(res['time'][0:19], '%Y-%m-%d %H:%M:%S')
+
+                        if (curr_time - t1).total_seconds() > 480 and (res['price'] - curr_price) / res['price'] >= luocha:
+
+                            if money + self.all_cangwei > self.allow_all_topTradeMoney and self.all_cangwei < self.allow_all_topTradeMoney:
+                                money = self.allow_all_topTradeMoney - self.all_cangwei
+
+                            # 计算成本单价
+                            num = (round(money / curr_price / 100) * 100)
+
+                            if num == 0 and money != 0:
+                                num = 100
+                                buyMoney = num * curr_price
+                                cost = (buyMoney + 20) / num
+                            elif num == 0 and money == 0:
+                                buyMoney = 0
+                                cost = 0
+                            else:
+                                buyMoney = num * curr_price
+                                cost = (buyMoney + 20) / num
+
+                            bt = 4
+                            self.hasBuy.insert_one({'code': self.code, 'price': curr_price, 'time': str(curr_time), 'buy_date': self.today, 'bt': bt, 'money': buyMoney, 'isSold': 0, 'cost': cost, 'num': num, 'pct_bt': 0, 'yingkui': 0})
+
+                            # 更新仓位情况
+                            self.all_cangwei += buyMoney
+
+                            # self.autoBuy(ndict, money, 'sale1')
+                            buy_price = curr_price + 0.01
+
+                            if self.run_type == 'trading':
+                                with self.trade_lock:
+                                    # res = self.trader.auto_buy_chrome(k, buy_price, num)
+                                    res = self.trader.auto_buy_session(k, buy_price, num)
+                                    self.logger.info(self.code + ' bt4买入, 单价:' + str(buy_price) + ' 数量:' + str(num) + ' 返回结果：' + str(res))
+                            else:
+                                res = 'backtest'
+                                self.logger.info(self.code + ' bt4买入, 单价:' + str(buy_price) + ' 数量:' + str(num) + ' 返回结果：' + str(res))
+
+                            self.catch_lowest = pd.Series(dtype='float64')
+                    except Exception as e:
+                        self.logger.error(f"error: {self.code}, {e}")
+
+            # print('4:::', time.time()-sta)
+        except Exception as e:
+            # raise e
+            self.logger.error(self.code + ' error :' + str(e))
+
+    async def jk_sale(self, lastreq, curr_time):
+        if not lastreq:
+            return 0
+        res = self.trend_rec.find({'code': self.code, 'isSold': 0})
+        for r in res:
+            try:
+                if r['money'] == 0:
+                    return 0
+                try:
+                    # 没有被卖，那么获取当前分时价格，然后和bt价格对比
+
+                    today_highest = lastreq['today_highest']
+                    curr_price = lastreq['curr_price']
+
+                    curr_time_temp = str(curr_time)
+                    if self.highest_price < today_highest:
+                        self.highest_price = today_highest
+                        self.catch_highest = pd.Series(dtype='float64')
+                        self.catch_highest[curr_time_temp] = today_highest
+                    else:
+                        self.catch_highest[curr_time_temp] = curr_price
+                except Exception as e:
+                    raise e
+
+                if not curr_price or not today_highest:
+                    return 0
+
+                # 更新当前距离成本价之后的最高价格
+                try:
+                    if curr_price > r['highest_price']:
+                        self.trend_rec.update_one({'code': self.code, '_id': r['_id']}, {'$set': {'highest_price': curr_price, 'highest_time': str(curr_time)}})
+
+                        r['highest_price'] = curr_price
+                    try:
+                        if curr_time.hour == 14 and curr_time.minute == 59 or (curr_time.hour == 15 and curr_time.minute == 0):
+                            self.trend_rec.update_one({'code': self.code, '_id': r['_id']}, {'$set': {'curr_price': curr_price}})
+                    except Exception as e:
+                        print(e)
+
+                    if curr_price == 0:
+                        return 0
+
+                except Exception as e:
+                    self.logger.error(f"Sold_Error777666, e:{e}")
+
+                # 当大于昨日成本价之后，才开始监控回落
+                zhiying = 0.008
+                if (self.dapan_yes1_macd <= 10 or (self.dapan_yes1_macd <= 15 and self.dapan_macd_is_get_smaller) or self.dapan_yes1_beili == 'top'):
+                    if (self.yes1_macd < self.yes2_macd and self.yes2_close > self.yes1_close and (self.trend4 == 'decreasing' or self.trend5 == 'decreasing' or self.trend6 == 'decreasing')):
+                        zhiying = 0
+                    elif (self.yes1_macd < self.yes2_macd and self.yes2_close < self.yes1_close and (self.trend4 == 'noTrend' and self.trend5 == 'noTrend' and self.trend6 == 'noTrend')) or (self.yes1_macd > self.yes2_macd and self.yes2_close > self.yes1_close and (self.trend4 == 'noTrend' and self.trend5 == 'noTrend' and self.trend6 == 'noTrend')):
+                        zhiying = 0.008
+                    elif (self.yes1_macd < self.yes2_macd and self.yes2_close < self.yes1_close and (self.trend4 == 'increasing' or self.trend5 == 'increasing' or self.trend6 == 'increasing')) or (self.yes1_macd > self.yes2_macd and self.yes2_close > self.yes1_close and (self.trend4 == 'increasing' or self.trend5 == 'increasing' or self.trend6 == 'increasing')):
+                        zhiying = 0.018
+                    elif (self.yes1_macd > self.yes2_macd and self.yes2_close < self.yes1_close and (self.trend4 == 'increasing' and self.trend5 == 'increasing' and self.trend6 == 'increasing')) or (self.yes1_macd > self.yes2_macd and self.yes2_close < self.yes1_close and (self.trend4 == 'increasing' and self.trend5 == 'increasing' and self.trend6 == 'increasing')):
+                        zhiying = 0.038
+                    elif (self.yes1_macd > self.yes2_macd and self.yes2_close < self.yes1_close and (self.trend4 == 'increasing' or self.trend5 == 'increasing' or self.trend6 == 'increasing')) or (self.yes1_macd > self.yes2_macd and self.yes2_close < self.yes1_close and (self.trend4 == 'increasing' or self.trend5 == 'increasing' or self.trend6 == 'increasing')):
+                        zhiying = 0.028
+                else:
+                    if (self.yes1_macd < self.yes2_macd and self.yes2_close > self.yes1_close and (self.trend4 == 'decreasing' or self.trend5 == 'decreasing' or self.trend6 == 'decreasing')):
+                        zhiying = 0.008
+                    elif (self.yes1_macd < self.yes2_macd and self.yes2_close < self.yes1_close and (self.trend4 == 'noTrend' and self.trend5 == 'noTrend' and self.trend6 == 'noTrend')) or (self.yes1_macd > self.yes2_macd and self.yes2_close > self.yes1_close and (self.trend4 == 'noTrend' and self.trend5 == 'noTrend' and self.trend6 == 'noTrend')):
+                        zhiying = 0.028
+                    elif (self.yes1_macd < self.yes2_macd and self.yes2_close < self.yes1_close and (self.trend4 == 'increasing' or self.trend5 == 'increasing' or self.trend6 == 'increasing')) or (self.yes1_macd > self.yes2_macd and self.yes2_close > self.yes1_close and (self.trend4 == 'increasing' or self.trend5 == 'increasing' or self.trend6 == 'increasing')):
+                        zhiying = 0.048
+                    elif (self.yes1_macd > self.yes2_macd and self.yes2_close < self.yes1_close and (self.trend4 == 'increasing' and self.trend5 == 'increasing' and self.trend6 == 'increasing')) or (self.yes1_macd > self.yes2_macd and self.yes2_close < self.yes1_close and (self.trend4 == 'increasing' and self.trend5 == 'increasing' and self.trend6 == 'increasing')):
+                        zhiying = 0.068
+                    elif (self.yes1_macd > self.yes2_macd and self.yes2_close < self.yes1_close and (self.trend4 == 'increasing' or self.trend5 == 'increasing' or self.trend6 == 'increasing')) or (self.yes1_macd > self.yes2_macd and self.yes2_close < self.yes1_close and (self.trend4 == 'increasing' or self.trend5 == 'increasing' or self.trend6 == 'increasing')):
+                        zhiying = 0.058
+
+                # zhiying = 0.048
+                sold_type = f'{zhiying}'
+                sale_cond1 = ((r['highest_price'] - r['cost']) / r['cost'] >= zhiying)
+
+                try:
+                    # 计算当前ma5
+                    # self.curr_ma5 = (self.sum_ma4 + curr_price) / 5
+                    self.curr_ma6 = (self.sum_ma5 + curr_price) / 6
+                    self.curr_ma7 = (self.sum_ma6 + curr_price) / 7
+                    self.curr_ma8 = (self.sum_ma7 + curr_price) / 8
+
+                    top_beili_cond1 = (self.yes2_close >= self.yes1_close or self.yes2_lowest >= self.yes1_lowest or self.yes2_highest >= self.yes1_highest or self.yes1_lowest > curr_price)
+                    top_beili_cond2 = (self.yes1_ma8 > curr_price or self.yes1_ma7 > curr_price or self.yes1_ma6 > curr_price or self.yes1_ma5 > curr_price or self.yes1_ma4 > curr_price)
+                    top_beili_cond3 = (self.yes1_ma7 > self.yes2_ma7 or self.yes1_ma6 > self.yes2_ma6 or self.yes1_ma8 > self.yes2_ma8 or self.yes1_ma6 < self.curr_ma6 or self.yes1_ma7 < self.curr_ma7 or self.yes1_ma8 < self.curr_ma8)
+                    # 是否是假底背离，继续下跌
+                    top_beili_cond4 = ((self.yes1_ma7 < self.yes2_ma7 and self.yes1_ma6 < self.yes2_ma6 and self.yes1_ma8 < self.yes2_ma8) or (self.yes1_ma6 > self.curr_ma6 and self.yes1_ma7 > self.curr_ma7 and self.yes1_ma8 > self.curr_ma8))  # # if top_beili_cond1 and top_beili_cond2 and (top_beili_cond3 or top_beili_cond4):  #     self.isAppear_top = True
+
+                    if top_beili_cond1 and top_beili_cond2 and (top_beili_cond3 or top_beili_cond4):
+                        self.isAppear_top = True
+
+                    # self.logger.debug(f"{self.code} self.code_ma:{self.code_ma}")
+                except Exception as e:
+                    self.logger.error(e)
+
+                # 判断是否出现顶背离
+                try:
+                    is_top_beili = (self.beili == 'top' and self.isAppear_top)
+
+                    if (self.yes1_highest < self.yes2_highest and self.yes1_lowest < self.yes2_lowest) or (self.yes1_macd <= 0.01 and (not (self.yes1_highest > self.yes2_highest and self.yes1_lowest > self.yes2_lowest))):
+                        sale_cond1 = True
+                        sold_type = "xiadie_trend"
+
+                    if (curr_price < self.yes1_lowest) and (today_highest < self.yes1_highest):
+                        sale_cond1 = True
+                        sold_type = "xiadie_trend"
+
+                    if curr_price < self.yes1_lowest * 0.982:
+                        sale_cond1 = True
+                        sold_type = "qingcang"
+
+                    if curr_price < self.yes1_lowest * 0.992 and (self.yes1_highest < self.yes2_highest and self.yes1_lowest < self.yes2_lowest):
+                        sale_cond1 = True
+                        sold_type = "qingcang"
+
+                    # 如果大盘不好，且个股macd在减少，且昨日跌，清仓
+                    if self.yes1_macd < self.yes2_macd and self.yes1_close < self.yes2_close and (self.dapan_yes1_macd <= 10 or (self.dapan_yes1_macd <= 15 and self.dapan_macd_is_get_smaller) or self.dapan_yes1_beili == 'top'):
+                        sale_cond1 = True
+                        sold_type = "xiadie_trend"
+
+                    if is_top_beili:
+                        sale_cond1 = True
+                        sold_type = "top_beili"
+
+                    if curr_time.minute % 39 == 0 and curr_time.second % 60 == 0:
+                        # print('jk_sale is alive:', curr_time.time(), len(self.ser))  # self.logger.debug(f"In jk_sale4:{r}")
+                        pass
+                except Exception as e:
+                    self.logger.error(f"Sold_Error16544, e:{e}")
+
+                # if sale_cond1 and sale_cond2 and sale_cond3 and sale_cond4 and sale_cond5:
+                if sale_cond1:
+
+                    # self.logger.info(log_msg + '进入if')
+                    # print('jk_sale:',self.catch_highest)
+
+                    # 判断回落点,设置止盈
+                    act = ''
+                    # 判断回落点数是否大于0.003
+                    # if self.catch_highest.max() - self.catch_highest[-1] >= 0.003:
+
+                    if sold_type == 'qingcang' or ((sold_type == "xiadie_trend" or sold_type == "top_beili") and (curr_time.hour == 14 and curr_time.minute >= 53)):
+                        if r['st'] != 0:
+                            try:
+                                num = r['left_num']
+                                condition = {'code': self.code, 'time': r['time'], '_id': r['_id']}
+                                curr_yingkui = num * (curr_price - r['cost'])
+                                yingkui = curr_yingkui + r['yingkui']
+                                self.trend_rec.update_one(condition, {'$set': {'isSold': 1, 'left_num': 0, 'st': r['st'] + 1, f"soldTime{r['st'] + 1}": str(curr_time), f"soldPrice{r['st'] + 1}": curr_price, f"sold_type{r['st'] + 1}": sold_type, f"yingkui{r['st'] + 1}": curr_yingkui, 'yingkui': yingkui}})
+
+                                # 更新仓位情况
+                                self.all_cangwei -= num * curr_price
+
+                                sale_price = curr_price - 0.03  # 查询剩余仓位，全部清仓  # res_dct = self.trader.get_nums()  # num = res_dct[k[2:]]
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error2222: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+                            try:
+                                if self.run_type == 'trading':
+                                    uNum = self.trend_reality.find_one({'code': self.code})
+                                    with self.trade_lock:
+                                        if uNum and int(uNum['uNum']) == int(num):
+                                            res = self.trader.auto_sale_session(self.code, sale_price, num)
+                                        else:
+                                            res = self.trader.auto_sale_chrome(self.code, sale_price, 'all')
+                                        self.logger.info(f"sold_point1: {self.code}, curr_price:{curr_price}, num:{num}, response:{res}")
+                                else:
+                                    res = 'backtest'
+                                    self.logger.info(f"sold_point1: {self.code}, curr_price:{curr_price}, num:{num}, response:{res}")
+
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error2: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")  # # send_notice('Sold_Error2', f"Sold_Error1: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                        else:
+                            try:
+                                num = r['left_num']
+                                condition = {'code': self.code, 'time': r['time'], '_id': r['_id']}
+                                yingkui = num * (curr_price - r['cost'])
+                                self.trend_rec.update_one(condition, {'$set': {'isSold': 1, 'left_num': 0, 'st': 1, 'soldTime1': str(curr_time), 'soldPrice1': curr_price, 'sold_type1': sold_type, 'yingkui1': yingkui, 'yingkui': yingkui}})
+
+                                # 更新仓位情况
+                                self.all_cangwei -= num * curr_price
+
+                                sale_price = curr_price - 0.03  # 查询剩余仓位，全部清仓  # res_dct = self.trader.get_nums()  # num = res_dct[k[2:]]
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error33333: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+                            try:
+                                if self.run_type == 'trading':
+                                    uNum = self.trend_reality.find_one({'code': self.code})
+                                    with self.trade_lock:
+                                        if uNum and int(uNum['uNum']) == int(num):
+                                            res = self.trader.auto_sale_session(self.code, sale_price, num)
+                                        else:
+                                            res = self.trader.auto_sale_chrome(self.code, sale_price, 'all')
+                                else:
+                                    res = 'backtest'
+                                self.logger.info(f"sold_point2: {self.code}, curr_price:{curr_price}, num:{num}, response:{res}")
+
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error4: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")  # # send_notice('Sold_Error4', f"Sold_Error1: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                    elif (sold_type == "xiadie_trend" or sold_type == "top_beili") and ((self.catch_highest.max() - self.catch_highest[-1]) / self.catch_highest.max() >= 0.003):
+                        if r['st'] == 0:
+                            try:
+                                if r['left_num'] < 300:
+                                    num = r['left_num']
+                                    isSold = 1  # 查询剩余仓位，全部清仓  # res_dct = self.trader.get_nums()  # num = res_dct[k[2:]]
+                                else:
+                                    num = int(r['left_num'] / 300) * 200
+                                    isSold = 0
+                                left_num = r['left_num'] - num
+                                condition = {'code': self.code, 'time': r['time'], '_id': r['_id']}
+                                yingkui1 = num * (curr_price - r['cost'])
+                                yingkui = yingkui1
+                                self.trend_rec.update_one(condition, {'$set': {'isSold': isSold, 'st': 1, 'left_num': left_num, 'left_num1': left_num, 'soldNum1': num, 'soldTime1': str(curr_time), 'soldPrice1': curr_price, 'yingkui': yingkui, 'yingkui1': yingkui1, 'sold_type1': sold_type}})
+
+                                # 更新仓位情况
+                                self.all_cangwei -= num * curr_price
+
+                                sale_price = curr_price - 0.03
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error444: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+                            try:
+                                num = 'all' if isSold == 1 else num
+                                if self.run_type == 'trading':
+                                    with self.trade_lock:
+                                        res = self.trader.auto_sale_chrome(self.code, sale_price, num)  # res = self.trader.auto_sale_session(self.code, sale_price, num)
+                                else:
+                                    res = 'backtest'
+
+                                self.logger.info(f"sold_point5: {self.code}, curr_price:{curr_price}, num:{num}, response:{res}")
+
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error9: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")  # # send_notice('Sold_Error9', f"Sold_Error1: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                        elif r['st'] == 1 and (curr_price - r['soldPrice1']) / r['soldPrice1'] >= 0.003:
+                            try:
+                                if r['left_num'] < 300:
+                                    num = r['left_num']
+                                    isSold = 1  # # 查询剩余仓位，全部清仓  # res_dct = self.trader.get_nums()  # num = res_dct[k[2:]]
+                                else:
+                                    num = int(r['left_num'] / 300) * 200
+                                    isSold = 0
+                                left_num = r['left_num'] - num
+                                condition = {'code': self.code, 'time': r['time'], '_id': r['_id']}
+                                yingkui2 = num * (curr_price - r['cost'])
+                                yingkui = r['yingkui1'] + yingkui2
+                                self.trend_rec.update_one(condition, {'$set': {'isSold': isSold, 'st': 2, 'left_num': left_num, 'left_num2': left_num, 'soldNum2': num, 'soldTime2': str(curr_time), 'soldPrice2': curr_price, 'yingkui': yingkui, 'yingkui2': yingkui2, 'sold_type2': sold_type}})
+
+                                # 更新仓位情况
+                                self.all_cangwei -= num * curr_price
+
+                                sale_price = curr_price - 0.03
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error555: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                            try:
+                                num = 'all' if isSold == 1 else num
+                                if self.run_type == 'trading':
+                                    with self.trade_lock:
+                                        res = self.trader.auto_sale_chrome(self.code, sale_price, num)  # res = self.trader.auto_sale_session(self.code, sale_price, num)
+                                else:
+                                    res = 'backtest'
+                                self.logger.info(f"sold_point5: {self.code}, curr_price:{curr_price}, num:{num}, response:{res}")
+
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error10: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")  # # send_notice('Sold_Error10', f"Sold_Error1: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                        elif r['st'] == 2 and (curr_price - r['soldPrice2']) / r['soldPrice2'] >= 0.003:
+                            try:
+                                num = r['left_num']
+                                left_num = r['left_num'] - num
+                                condition = {'code': r['code'], '_id': r['_id']}
+                                yingkui3 = num * (curr_price - r['cost'])
+                                yingkui = r['yingkui1'] + r['yingkui2'] + yingkui3
+                                self.trend_rec.update_one(condition, {'$set': {'isSold': 1, 'st': 3, 'left_num': left_num, 'left_num3': left_num, 'soldNum3': num, 'soldTime3': str(curr_time), 'soldPrice3': curr_price, 'yingkui': yingkui, 'yingkui3': yingkui3, 'sold_type3': sold_type}})
+
+                                # 更新仓位情况
+                                self.all_cangwei -= num * curr_price
+
+                                sale_price = curr_price - 0.03  # try:  #     # 查询剩余仓位，全部清仓  #     res_dct = self.trader.get_nums()  #     num = res_dct[k[2:]]  # except Exception as e:  #     self.logger.error(f"Sold_Error11: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")  #     # # send_notice('Sold_Error11', f"Sold_Error1: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error8: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+                            try:
+                                if self.run_type == 'trading':
+                                    uNum = self.trend_reality.find_one({'code': self.code})
+                                    with self.trade_lock:
+                                        if uNum and int(uNum['uNum']) == int(num):
+                                            res = self.trader.auto_sale_session(self.code, sale_price, num)
+                                        else:
+                                            res = self.trader.auto_sale_chrome(self.code, sale_price, 'all')
+                                else:
+                                    res = 'backtest'
+                                self.logger.info(f"sold_point7: {self.code}, curr_price:{curr_price}, num:{num}, response:{res}")
+
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error12: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")  # # send_notice('Sold_Error12', f"Sold_Error1: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                    elif (r['highest_price'] - curr_price) / r['highest_price'] > 0.012 and curr_price > r['cost']:
+                        sold_type = '止盈0.012'
+                        if r['st'] != 0:
+                            try:
+                                num = r['left_num']
+                                condition = {'code': self.code, 'time': r['time'], '_id': r['_id']}
+                                curr_yingkui = num * (curr_price - r['cost'])
+                                yingkui = curr_yingkui + r['yingkui']
+
+                                self.trend_rec.update_one(condition, {'$set': {'isSold': 1, 'left_num': 0, 'st': r['st'] + 1, f"soldTime{r['st'] + 1}": str(curr_time), f"soldPrice{r['st'] + 1}": curr_price, f"sold_type{r['st'] + 1}": sold_type, f"yingkui{r['st'] + 1}": curr_yingkui, 'yingkui': yingkui}})
+
+                                # 更新仓位情况
+                                self.all_cangwei -= num * curr_price
+
+                                sale_price = curr_price - 0.03  # 查询剩余仓位，全部清仓  # res_dct = self.trader.get_nums()  # num = res_dct[k[2:]]
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error33: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+                            try:
+                                if self.run_type == 'trading':
+                                    uNum = self.trend_reality.find_one({'code': self.code})
+                                    with self.trade_lock:
+                                        if uNum and int(uNum['uNum']) == int(num):
+                                            res = self.trader.auto_sale_session(self.code, sale_price, num)
+                                        else:
+                                            res = self.trader.auto_sale_chrome(self.code, sale_price, 'all')
+                                else:
+                                    res = 'backtest'
+                                self.logger.info(f"sold_point3: {self.code}, curr_price:{curr_price}, num:{num}, response:{res}")
+
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error6: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")  # send_notice('Sold_Error6', f"Sold_Error1: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+                        else:
+                            try:
+                                num = r['left_num']
+                                condition = {'code': self.code, 'time': r['time'], '_id': r['_id']}
+                                yingkui = num * (curr_price - r['cost'])
+                                self.trend_rec.update_one(condition, {'$set': {'isSold': 1, 'left_num': 0, 'st': 1, 'soldTime1': str(curr_time), 'soldPrice1': curr_price, 'sold_type1': sold_type, 'yingkui1': yingkui, 'yingkui': yingkui}})
+
+                                # 更新仓位情况
+                                self.all_cangwei -= num * curr_price
+
+                                sale_price = curr_price - 0.03  # 查询剩余仓位，全部清仓  # res_dct = self.trader.get_nums()  # num = res_dct[k[2:]]
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error8888: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                            try:
+                                if self.run_type == 'trading':
+                                    uNum = self.trend_reality.find_one({'code': self.code})
+                                    with self.trade_lock:
+                                        if uNum and int(uNum['uNum']) == int(num):
+                                            res = self.trader.auto_sale_session(self.code, sale_price, num)
+                                        else:
+                                            res = self.trader.auto_sale_chrome(self.code, sale_price, 'all')
+                                else:
+                                    res = 'backtest'
+                                self.logger.info(f"sold_point4: {self.code}, curr_price:{curr_price}, num:{num}, response:{res}")
+
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error8: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")  # send_notice('Sold_Error8', f"Sold_Error1: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                    elif (r['highest_price'] - curr_price) / r['highest_price'] > 0.006 and curr_price > r['cost']:
+                        sold_type = '止盈0.006'
+                        if r['st'] == 0:
+                            try:
+                                if r['left_num'] < 300:
+                                    num = r['left_num']
+                                    isSold = 1  # 查询剩余仓位，全部清仓  # res_dct = self.trader.get_nums()  # num = res_dct[k[2:]]
+                                else:
+                                    num = int(r['left_num'] / 300) * 200
+                                    isSold = 0
+                                left_num = r['left_num'] - num
+                                condition = {'code': self.code, 'time': r['time'], '_id': r['_id']}
+                                yingkui1 = num * (curr_price - r['cost'])
+                                yingkui = yingkui1
+                                self.trend_rec.update_one(condition, {'$set': {'isSold': isSold, 'st': 1, 'left_num': left_num, 'left_num1': left_num, 'soldNum1': num, 'soldTime1': str(curr_time), 'soldPrice1': curr_price, 'yingkui': yingkui, 'yingkui1': yingkui1, 'sold_type1': sold_type}})
+
+                                # 更新仓位情况
+                                self.all_cangwei -= num * curr_price
+
+                                sale_price = curr_price - 0.03
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error999: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+                            try:
+                                num = 'all' if isSold == 1 else num
+                                if self.run_type == 'trading':
+                                    with self.trade_lock:
+                                        # res = self.trader.auto_sale_chrome(self.code, sale_price, num)
+                                        res = self.trader.auto_sale_session(self.code, sale_price, num)
+                                else:
+                                    res = 'backtest'
+                                self.logger.info(f"sold_point5: {self.code}, curr_price:{curr_price}, num:{num}, response:{res}")
+
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error9: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")  # send_notice('Sold_Error9', f"Sold_Error1: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                        elif r['st'] == 1 and (curr_price - r['soldPrice1']) / r['soldPrice1'] >= 0.003:
+                            try:
+                                if r['left_num'] < 300:
+                                    num = r['left_num']
+                                    isSold = 1
+                                else:
+                                    num = int(r['left_num'] / 300) * 200
+                                    isSold = 0
+                                left_num = r['left_num'] - num
+                                condition = {'code': self.code, 'time': r['time'], '_id': r['_id']}
+                                yingkui2 = num * (curr_price - r['cost'])
+                                yingkui = r['yingkui1'] + yingkui2
+                                self.trend_rec.update_one(condition, {'$set': {'isSold': isSold, 'st': 2, 'left_num': left_num, 'left_num2': left_num, 'soldNum2': num, 'soldTime2': str(curr_time), 'soldPrice2': curr_price, 'yingkui': yingkui, 'yingkui2': yingkui2, 'sold_type2': sold_type}})
+
+                                # 更新仓位情况
+                                self.all_cangwei -= num * curr_price
+
+                                sale_price = curr_price - 0.03
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error666: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                            try:
+                                num = 'all' if isSold == 1 else num
+                                if self.run_type == 'trading':
+                                    with self.trade_lock:
+                                        res = self.trader.auto_sale_chrome(self.code, sale_price, num)
+                                else:
+                                    res = 'backtest'
+                                self.logger.info(f"sold_point6: {self.code}, curr_price:{curr_price}, num:{num}, response:{res}")
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error10: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")  # send_notice('Sold_Error10', f"Sold_Error1: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                        elif r['st'] == 2 and (curr_price - r['soldPrice2']) / r['soldPrice2'] >= 0.003:
+                            try:
+                                num = r['left_num']
+                                left_num = r['left_num'] - num
+                                condition = {'code': r['code'], '_id': r['_id']}
+                                yingkui3 = num * (curr_price - r['cost'])
+                                yingkui = r['yingkui1'] + r['yingkui2'] + yingkui3
+                                self.trend_rec.update_one(condition, {'$set': {'isSold': 1, 'st': 3, 'left_num': left_num, 'left_num3': left_num, 'soldNum3': num, 'soldTime3': str(curr_time), 'soldPrice3': curr_price, 'yingkui': yingkui, 'yingkui3': yingkui3, 'sold_type3': sold_type}})
+                                sale_price = curr_price - 0.03
+
+                                # 更新仓位情况
+                                self.all_cangwei -= num * curr_price
+
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error111: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                            try:
+                                if self.run_type == 'trading':
+                                    uNum = self.trend_reality.find_one({'code': self.code})
+                                    with self.trade_lock:
+                                        if uNum and int(uNum['uNum']) == int(num):
+                                            res = self.trader.auto_sale_session(self.code, sale_price, num)
+                                        else:
+                                            res = self.trader.auto_sale_chrome(self.code, sale_price, 'all')
+                                else:
+                                    res = 'backtest'
+                                self.logger.info(f"sold_point7: {self.code}, curr_price:{curr_price}, num:{num}, response:{res}")
+
+                            except Exception as e:
+                                self.logger.error(f"Sold_Error12: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")  # send_notice('Sold_Error12', f"Sold_Error1: {self.code}, time:{curr_time}, sold_type:{sold_type}, e:{e}")
+
+                    # 如果有进来过那么，clean_flag 标记为清空
+                    self.clean_flag = True
+
+                # 顶背离清仓  # 获取最近插入的数据  # latest_rec = self.beili.find({'code': k}).sort('_id', -1).limit(1)  # latest_rec = [x for x in latest_rec]
+
+                # cond1 = (self.yes2_close >= self.yes1_close or  #          self.yes2_lowest >= self.yes1_lowest or  #          self.yes2_highest >= self.yes1_highest)  #  # cond2 = self.yes1_ma8 > curr_price  #  # cond3 = (self.yes1_ma7 > self.yes2_ma7 or  #          self.yes1_ma6 > self.yes2_ma6 or  #          self.yes1_ma8 > self.yes2_ma8)
+
+                # is_false_bottom = (latest_rec and latest_rec[0]['type'] == 'bottom' and latest_rec[0]['price'] * 0.99 > curr_price)  # is_top_beili = latest_rec and latest_rec[0]['type'] == 'top'  #  # if is_top_beili or is_false_bottom:  #     num = r['num']  #     condition = {'code': self.code, 'time': r['time']}  #     yingkui = num * (curr_price - r['cost'])  #     self.trend_rec.update_one(condition, {  #         '$set': {'isSold': 1, 'soldTime': str(curr_time), 'soldPrice': curr_price,  #                  'yingkui': yingkui}})  #  #       #     sale_price = curr_price - 0.03  #     res = self.trader.auto_sale_chrome(self.code, sale_price, num)  #     self.logger.info(  #         str(k) + ' 卖出, 单价:' + str(curr_price - 0.01) + ' 数量:' + str(  #             num) + ' 返回结果：' + str(res))
+
+                # 如果有进来过那么，clean_flag 标记为清空  # self.clean_flag = True
+
+            except Exception as e:
+                # raise e
+                self.logger.error(f"error: {r['code']} {e}")
+
+    def get_bts(self):
+        # 初始化查询当日bt买入情况, 在jk_buy中，新增一笔买入，那么更新self.bt1_nums 和 self.bt1_codes_lst
+        self.bt1_nums = self.hasBuy.count_documents({'bt': 1, 'buy_date': self.today})
+        self.bt2_nums = self.hasBuy.count_documents({'bt': 2, 'buy_date': self.today})
+        self.bt3_nums = self.hasBuy.count_documents({'bt': 3, 'buy_date': self.today})
+        # self.bt4_nums = self.hasBuy.count_documents({'bt': 4, 'buy_date': self.today})
+        # self.bt5_nums = self.hasBuy.count_documents({'bt': 5, 'buy_date': self.today})
+        self.bt1_lst = self.hasBuy.find({'bt': 1, 'buy_date': self.today})
+        self.bt2_lst = self.hasBuy.find({'bt': 2, 'buy_date': self.today})
+        self.bt3_lst = self.hasBuy.find({'bt': 3, 'buy_date': self.today})
+        # self.bt4_lst = self.hasBuy.find({'bt': 4, 'buy_date': self.today})
+        self.bt1_codes_lst = []
+        self.bt2_codes_lst = []
+        self.bt3_codes_lst = []
+        self.bt4_codes_lst = []
+        for b in self.bt1_lst:
+            self.bt1_codes_lst.append(b['code'])
+        for b in self.bt2_lst:
+            self.bt2_codes_lst.append(b['code'])
+        for c in self.bt3_lst:
+            self.bt3_codes_lst.append(c['code'])
+
+        bt1_lst = self.hasBuy.find({'bt': 1, 'buy_date': self.today})
+        self.first_buy_nums = 0
+        self.first_buy_lst = []
+        for b in bt1_lst:
+            if b['money'] == 0:
+                res = self.hasBuy.find_one({'code': b['code'], 'bt': 2, 'buy_date': self.today})
+                if res:
+                    self.first_buy_nums += 1
+                    self.first_buy_lst.append(b['code'])
+            else:
+                self.first_buy_nums += 1
+                self.first_buy_lst.append(b['code'])
+
+    def update_all_cangwei(self):
+        # 设定所有股票总仓位, 在后面交易过程中self.all_cangwei，买入加，卖出减
+        try:
+            # 若果仓位超标，退出交易
+            self.all_nosale_trend_rec = self.trend_rec.find({'isSold': 0})
+            self.today_all_hasBuy = self.hasBuy.find({'buy_date': self.today})
+            self.all_cangwei = 0
+            for a in self.all_nosale_trend_rec:
+                self.all_cangwei += a['left_num'] * a['cost']
+            for t in self.today_all_hasBuy:
+                self.all_cangwei += t['money']
+
+            # self.logger.debug(f"{self.code} self.all_cangwei:{self.all_cangwei}, self.per_top_money:{self.per_top_money}")
+
+        except Exception as e:
+            self.logger.error(e)
+
+
+class Trend:
+    def __init__(self, today, yestoday, run_type, jk_buy_lst=None):
+
+        self.run_type = run_type
+
+        # 获取当前执行文件的名称
+        self.file_name = str(os.path.basename(__file__).split('.')[0])
+
+        # 设置交易时间
+        self.today = today
+        self.yestoday = yestoday
+
+        # 连接mongoDB
+        self.myclient = pm.MongoClient("mongodb://localhost:27017/")
+        self.fd = self.myclient["freedom"]
+
+        # 获取sh和sz指数数据
+        if self.run_type == 'backtest':
+            sz_df = pd.read_excel('./back_test/399001.xlsx')
+            sh_df = pd.read_excel('./back_test/000001.xlsx')
+        elif self.run_type == 'trading':
+            sz_df = pd.read_excel('./find_trend/k_daily/399001.xlsx')
+            sh_df = pd.read_excel('./find_trend/k_daily/000001.xlsx')
+
+        self.sz = sz_df[sz_df['trade_date'] == self.yestoday]
+        self.sh = sh_df[sh_df['trade_date'] == self.yestoday]
+
+        if self.run_type == 'backtest':
+            self.trend_rec = self.fd[self.file_name + 'trend_rec']
+            self.hasBuy = self.fd[self.file_name + 'trend_has_buy']
+            self.basic_data_store = self.fd[self.file_name + 'trend__basic_data']
+            self.trend_reality = self.fd[self.file_name + 'trend_reality']
+
+            # 准备买入卖出标的
+            if jk_buy_lst != None:
+                self.all_jk_list = jk_buy_lst
+            else:
+                self.all_jk_list = []
+
+            # 获取当日筛选出来的趋势股数量，作为当日的行情指标
+            self.trend_nums = len(self.all_jk_list)
+
+            self.all_jk_buy_list = copy.deepcopy(self.all_jk_list)
+            self.all_jk_sale_list = []
+            # 加入未卖出标的
+            for r in self.trend_rec.find({'isSold': 0}):
+                # print(r['code'])
+                self.all_jk_sale_list.append(r['code'])
+                self.all_jk_list.append(r['code'])  # print(222,self.all_jk_list)  # if r['code'] in self.all_jk_buy_list:  #     self.all_jk_buy_list.remove(r['code'])
+
+            # print(111, self.all_jk_list)
+            self.all_jk_buy_list = self.all_jk_buy_list
+            # all_jk_sale_list 可能有多日未卖出，需要去重
+            self.all_jk_sale_list = set(self.all_jk_sale_list)
+
+            # self.all_jk_list = set(self.all_jk_list)
+            self.all_jk_list = set(list(self.all_jk_buy_list) + list(self.all_jk_sale_list))
+            # print(333, self.all_jk_list)
+
+            # all_jk_list出来后，准备self.all_trend_df
+            # self.all_trend_df = pd.DataFrame()
+
+            # for code in self.all_jk_list:
+            #     # 将ma情况写入到对象中
+            #     if not os.path.exists('./back_test/k_daily/' + self.chg_code_type(code) + '.xlsx'):
+            #         print('不存在', code)
+            #         continue
+            #     code_df = pd.read_excel('./back_test/k_daily/' + self.chg_code_type(code) + '.xlsx')
+            #     today_int = int(f"{today[0:4]}{today[5:7]}{today[8:]}")
+            #     self.all_trend_df = self.all_trend_df.append(code_df[code_df['trade_date'] == today_int], ignore_index=True)
+
+            self.all_trend_df = pd.read_excel(f'./find_trend/backtest_k_daily3/trend_k_list/{self.today}.xlsx')
+
+            for per in self.all_trend_df.itertuples():
+                self.all_trend_df.loc[per.Index, 'ts_code'] = self.chg_code_type(per.ts_code)
+
+        elif self.run_type == 'trading':
+            self.trend_rec = self.fd['trend_rec']
+            self.hasBuy = self.fd['trend_has_buy']
+            self.basic_data_store = self.fd['trend__basic_data']
+            self.trend_reality = self.fd['trend_reality']
+
+            self.all_trend_df = pd.read_excel('./find_trend/k_daily/000trend_k_list.xlsx')
+            # print(self.all_trend_df['ts_code'].values)
+            self.all_jk_buy_df = pd.read_excel('./find_trend/k_daily/000jk_buy_list.xlsx')
+
+            # print(self.all_jk_buy_df['ts_code'].values)
+            # 新出现底部
+            self.all_jk_list = [self.chg_code_type(str(code).zfill(6)) for code in self.all_jk_buy_df['ts_code'].values]
+
+            # 获取当日筛选出来的趋势股数量，作为当日的行情指标
+            self.trend_nums = len(self.all_jk_list)
+            # print(self.all_jk_list)
+
+            self.all_jk_buy_list = copy.deepcopy(self.all_jk_list)
+            self.all_jk_sale_list = []
+            # 加入未卖出标的
+            for r in self.trend_rec.find({'isSold': 0}):
+                # print(r['code'])
+                self.all_jk_sale_list.append(r['code'])
+                self.all_jk_list.append(r['code'])  # print(222,self.all_jk_list)  # if r['code'] in self.all_jk_buy_list:  #     self.all_jk_buy_list.remove(r['code'])
+
+            self.all_jk_buy_list = random.sample(self.all_jk_buy_list, 28)
+            # all_jk_sale_list 可能有多日未卖出，需要去重
+            self.all_jk_sale_list = set(self.all_jk_sale_list)
+
+            # self.all_jk_list = set(self.all_jk_list)
+            # 合并新的买和卖标的
+            self.all_jk_list = set(list(self.all_jk_buy_list) + list(self.all_jk_sale_list))
+
+            # 创建selenium句柄
+            self.trader = Auto_trade(False)
+
+        print('*' * 88)
+        print('all_jk_list:', self.all_jk_list)
+        print('all_jk_buy_list:', self.all_jk_buy_list)
+        print('all_jk_sale_list:', self.all_jk_sale_list)
+        print('*' * 88)
+
+        # 启动日志
+        self.file_name = str(os.path.basename(__file__).split('.')[0])
+        # self.logger = Logger('./trading_' + str(self.today) + '.log').get_logger()
+        self.logger = self.getlogger()
+
+        # 设置ip池
+        self.ipPool = self.fd['ipPool']
+        self.allIpPool = self.fd['allIpPool']
+
+        # 捕捉最低和最高价格临时记录字典变量
+        self.catch_lowest = {}
+        self.catch_highest = {}
+        self.code_ma = {}
+        # 临时存储极值
+        self.lowest_price = {}
+        self.highest_price = {}
+        # 记录清空标记
+        self.clean_flag = {}
+
+        # 获取当日交易的股票代码
+        for j in self.all_jk_list:
+            # 获取所有code的均线ma数据, 有的标的可能当日没有交易数据，比如停牌等，那么需要删除all_jk_list
+            try:
+                self.code_ma[j] = self.get_ma(j)  # print(j, self.code_ma[j]['beili'], self.code_ma[j]['trd_days'], self.code_ma[j]['trend3'])
+            except Exception as e:
+                print(e)
+                self.all_jk_list.remove(j)
+                self.all_jk_sale_list.remove(j)
+                self.all_jk_buy_list.remove(j)
+            else:
+                self.catch_lowest[j] = pd.Series(dtype='float64')
+                self.catch_highest[j] = pd.Series(dtype='float64')
+
+                # 临时存储极值
+                # 临时记录当日最低价格和最高价格
+                self.lowest_price[j] = 1000
+                self.highest_price[j] = 0
+
+                # 记录清空标记
+                self.clean_flag[j] = False
+        # exit()
+        # 初始话ser和lastreq
+        self.ser = pd.Series(dtype='float64')
+        self.lastreq = {}
+
+        self.isAppear_top = {}
+
+        # 初始化查询当日bt买入情况, 在jk_buy中，新增一笔买入，那么更新self.bt1_nums 和 self.bt1_codes_lst
+        self.bt1_nums = self.hasBuy.count_documents({'bt': 1, 'buy_date': self.today})
+        self.bt2_nums = self.hasBuy.count_documents({'bt': 2, 'buy_date': self.today})
+        self.bt3_nums = self.hasBuy.count_documents({'bt': 3, 'buy_date': self.today})
+        # self.bt4_nums = self.hasBuy.count_documents({'bt': 4, 'buy_date': self.today})
+        # self.bt5_nums = self.hasBuy.count_documents({'bt': 5, 'buy_date': self.today})
+        self.bt1_lst = self.hasBuy.find({'bt': 1, 'buy_date': self.today})
+        self.bt2_lst = self.hasBuy.find({'bt': 2, 'buy_date': self.today})
+        self.bt3_lst = self.hasBuy.find({'bt': 3, 'buy_date': self.today})
+        # self.bt4_lst = self.hasBuy.find({'bt': 4, 'buy_date': self.today})
+        self.bt1_codes_lst = []
+        self.bt2_codes_lst = []
+        self.bt3_codes_lst = []
+        self.bt4_codes_lst = []
+        for b in self.bt1_lst:
+            self.bt1_codes_lst.append(b['code'])
+        for b in self.bt2_lst:
+            self.bt2_codes_lst.append(b['code'])
+        for c in self.bt3_lst:
+            self.bt3_codes_lst.append(c['code'])
+
+        # 设置最大仓位
+        self.total_yingkui_money = 0
+        yingkui_res = self.trend_rec.find()
+        if yingkui_res:
+            for r in yingkui_res:
+                self.total_yingkui_money += r['yingkui']
+
+        self.logger.info(f"total_yingkui_money:{self.total_yingkui_money}")
+        self.allow_all_topTradeMoney = 240000 + int(self.total_yingkui_money / 1000) * 1000
+
+        self.dapan = 'decreasing'
+        self.dapan_yes1_macd = self.sh.yes1_macd.values[0]
+        self.dapan_macd_is_get_smaller = self.sh.yes1_macd.values[0] < self.sh.yes2_macd.values[0]
+        self.dapan_yes1_beili = self.sh.beili.values[0]
+        try:
+            if (self.sh.trend3.values[0] == 'decreasing' or self.sh.trend4.values[0] == 'decreasing' or self.sh.trend5.values[0] == 'decreasing' or self.sh.trend6.values[0] == 'decreasing' or self.sz.trend3.values[0] == 'decreasing' or self.sz.trend4.values[0] == 'decreasing' or self.sz.trend5.values[0] == 'decreasing' or self.sz.trend6.values[0] == 'decreasing'):
+                self.dapan = 'decreasing'
+            elif (self.sh.trend3.values[0] == 'increasing' or self.sh.trend4.values[0] == 'increasing' or self.sh.trend5.values[0] == 'increasing' or self.sh.trend6.values[0] == 'increasing' or self.sz.trend3.values[0] == 'increasing' or self.sz.trend4.values[0] == 'increasing' or self.sz.trend5.values[0] == 'increasing' or self.sz.trend6.values[0] == 'increasing'):
+                self.dapan = 'increasing'
+            else:
+                self.dapan = 'noTrend'
+
+        except Exception as e:
+            print(e)
+
+        # if self.trend_nums <= 10:
+        #     fenmu = 100
+        # elif self.trend_nums <= 25:
+        #     fenmu = 80
+        # elif self.trend_nums <= 50:
+        #     fenmu = 60
+        # elif self.trend_nums <= 75:
+        #     fenmu = 50
+        # else:
+        #     fenmu = 40
+
+        self.per_top_money = self.allow_all_topTradeMoney / 60
+
+        self.trade_lock = thr.Lock()
+
+        self.pct_sh = 0
+        self.pct_sz = 0
+
+        # 设定所有股票总仓位, 在后面交易过程中self.all_cangwei，买入加，卖出减
+        try:
+            # 若果仓位超标，退出交易
+            self.all_nosale_trend_rec = self.trend_rec.find({'isSold': 0})
+            self.today_all_hasBuy = self.hasBuy.find({'buy_date': self.today})
+            self.all_cangwei = 0
+            for a in self.all_nosale_trend_rec:
+                self.all_cangwei += a['left_num'] * a['cost']
+            for t in self.today_all_hasBuy:
+                self.all_cangwei += t['money']
+
+            # self.logger.debug(f"{self.code} self.all_cangwei:{self.all_cangwei}, self.per_top_money:{self.per_top_money}")
+
+        except Exception as e:
+            self.logger.error(e)
+
+    def getlogger(self):
+        self.logger = logging.getLogger("logger")
+        # 判断是否有处理器，避免重复执行
+        if not self.logger.handlers:
+            # 日志输出的默认级别为warning及以上级别，设置输出info级别
+            self.logger.setLevel(logging.DEBUG)
+            # 创建一个处理器handler  StreamHandler()控制台实现日志输出
+            sh = logging.StreamHandler()
+            # 创建一个格式器formatter  （日志内容：当前时间，文件，日志级别，日志描述信息）
+            formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] [%(lineno)d line]: %(message)s')
+
+            # 创建一个文件处理器，文件写入日志
+            fh = logging.FileHandler(filename='./trading_' + str(self.today) + '.log', encoding="utf8")
+            # 创建一个文件格式器f_formatter
+            f_formatter = logging.Formatter(fmt="[%(asctime)s] [%(levelname)s] [%(lineno)d line]: %(message)s", datefmt="%Y/%m/%d %H:%M:%S")
+
+            # 关联控制台日志器—处理器—格式器
+            self.logger.addHandler(sh)
+            sh.setFormatter(formatter)
+            # 设置处理器输出级别
+            sh.setLevel(logging.DEBUG)
+
+            # 关联文件日志器-处理器-格式器
+            self.logger.addHandler(fh)
+            fh.setFormatter(f_formatter)
+            # 设置处理器输出级别
+            fh.setLevel(logging.DEBUG)
+
+        return self.logger
+
+    # 保持登录
+    def keep_login(self):
+        time.sleep(30)
+        while True:
+            time.sleep(1)
+            curr_time = datetime.datetime.now()
+
+            # 9点10分，12点40退出重新登录
+            # if curr_time.hour == 9 and curr_time.minute == 15 and curr_time.second == 10:
+            #     try:
+            #         is_login = self.trader.wait.until(EC.text_to_be_present_in_element((By.XPATH, '//*[@id="main"]/div/div[1]/p/span[2]/a'), '退出'))
+            #
+            #         if is_login:
+            #             self.trader.driver.find_element_by_xpath('//*[@id="main"]/div/div[1]/p/span[2]/a').click()
+            #             # send_notice('logout_auto:', f"{curr_time}")
+            #             time.sleep(10)
+            #     except Exception as e:
+            #         self.logger.error(f"logout_fail：{curr_time}, {e}")
+            # elif curr_time.hour == 12 and curr_time.minute == 40 and curr_time.second == 10:
+            #     try:
+            #         is_login = self.trader.wait.until(EC.text_to_be_present_in_element((By.XPATH, '//*[@id="main"]/div/div[1]/p/span[2]/a'), '退出'))
+            #
+            #         if is_login:
+            #             self.trader.driver.find_element_by_xpath('//*[@id="main"]/div/div[1]/p/span[2]/a').click()
+            #             # send_notice('logout_auto:', f"{curr_time}")
+            #             time.sleep(10)
+            #     except Exception as e:
+            #         self.logger.error(f"logout_fail：{curr_time}, {e}")
+
+            # 每隔20秒检查是否登录
+            try:
+                if curr_time.minute % 59 == 0 and curr_time.second % 59 == 0:
+                    res = self.trader.driver.find_element_by_xpath('//*[@id="main"]/div/div[2]/div[1]/ul/li[1]/a').click()
+                    time.sleep(10)
+                    self.logger.info(f"login_state:alive, {curr_time}, {res}")  # send_notice('login_state', f"alive, {curr_time}, {res}")
+                elif curr_time.minute % 59 == 0 and curr_time.second % 58 == 0:
+                    res = self.trader.driver.find_element_by_xpath('//*[@id="main"]/div/div[2]/div[1]/ul/li[2]/a').click()
+                    time.sleep(10)
+                    self.logger.info(f"login_state:alive, {curr_time}, {res}")  # send_notice('login_state', f"alive, {curr_time}, {res}")
+                elif curr_time.minute % 59 == 0 and curr_time.second % 57 == 0:
+                    res = self.trader.driver.find_element_by_xpath('//*[@id="main"]/div/div[2]/div[1]/ul/li[3]/a').click()
+                    time.sleep(10)
+                    self.logger.info(f"login_state:alive, {curr_time}, {res}")  # send_notice('login_state', f"alive, {curr_time}, {res}")
+                elif curr_time.minute % 59 == 0 and curr_time.second % 56 == 0:
+                    res = self.trader.driver.find_element_by_xpath('//*[@id="main"]/div/div[2]/div[1]/ul/li[4]/a').click()
+                    time.sleep(10)
+                    self.logger.info(f"login_state:alive, {curr_time}, {res}")  # send_notice('login_state', f"alive, {curr_time}, {res}")
+            except Exception as e:
+                self.logger.error(f"登录失效：{curr_time}, {e}")
+                # send_notice('login_state', f"lost, {curr_time}, {e}")
+                self.trader.login()
+                try:
+                    res = self.trader.driver.find_element_by_xpath('//*[@id="main"]/div/div[2]/div[1]/ul/li[1]/a').click()  # send_notice('login_state', f"alive_agin, {curr_time}, {res}")
+                except Exception as e:
+                    self.logger.error(f"重新登录失败：{curr_time}, {e}")
+                    # send_notice('login_state', f"lost_agin, {curr_time}, {e}")
+                    self.trader.login()
+
+            if curr_time.hour == 12 and curr_time.minute == 50 and curr_time.second >= 57:
+                # self.trader.login()
+                self.trader = Auto_trade(False)
+                time.sleep(5)
+
+            if curr_time.hour >= 15 and curr_time.minute > 3:
+                break
+
+    # 修改代码类型
+    @classmethod
+    def chg_code_type(self, code):
+        if code[7:9] == 'SZ':
+            code = 'sz' + code[0:6]
+        elif code[7:9] == 'SH':
+            code = 'sh' + code[0:6]
+        elif code[0] == '0':
+            code = 'sz' + code[0:6]
+        elif code[0] == '6':
+            code = 'sh' + code[0:6]
+        return code
+
+    # 获取基础成交数据
+    def get_basic_data(self):
+        # 实列化code对象
+        buy_obj = {}
+        for code in self.all_jk_list:
+            try:
+                buy_obj[code] = trend_one(code, self)
+                self.logger.info(f'实列化{code},成功:{buy_obj[code]}')
+            except Exception as e:
+                self.logger.error(f'实列化{code},失败:{e}')
+
+        id = 1
+        while True:
+            # 每秒获取逐笔交易数据
+            curr_time = datetime.datetime.now()
+            if curr_time.hour >= 9 and curr_time.hour <= 15:
+                if (curr_time.hour == 11 and curr_time.minute > 30) or curr_time.hour == 12:
+                    continue
+                elif curr_time.hour >= 15 and curr_time.minute > 3:
+                    break
+                elif (curr_time.hour == 9 and curr_time.minute >= 30) or curr_time.hour >= 10:
+                    # if 1:
+                    #     if 1:
+                    try:
+                        ncode = []
+                        lastreq = {}
+                        for c in self.all_jk_list:
+                            # print(c)
+                            ncode.append(self.chg_code_type(c))
+                        all_list_2str = ','.join(ncode)
+
+                        url = "https://qt.gtimg.cn/q=" + all_list_2str + "&r=926277345"
+                        # print(url)
+
+                        try:
+                            res = Proxy_url.urlget(url)  # print(res)
+                        except Exception as e:
+                            self.logger.error(e)  # raise e
+                        else:
+                            res = re.split(";", res.text)
+                            # print('res:',res)
+                            ser = pd.Series(dtype='float64')
+                            # 移除尾巴上的/n
+                            res.pop()
+                            for r in res:
+                                info = re.split('~', r)
+                                # 修改etf代码号，前面加上sz或者sh
+                                for c in self.all_jk_list:
+                                    if info[2] in c:
+                                        info[2] = c
+                                # 存入当次访问的基础info数据
+                                lastreq[info[2]] = info
+                                # 存入个股实时价格，并在后面对比最低价格
+                                ser[info[2]] = float(info[3])  # print(lastreq)  # print(ser)
+
+                    except Exception as e:
+                        self.logger.error('error1' + str(e))  # raise e
+
+                    else:
+
+                        # 将基础数据存入mongog
+                        self.basic_data2mongo(id, curr_time, ser, lastreq)
+                        self.ser = ser
+                        self.lastreq = {}
+
+                        for code, per in lastreq.items():
+                            self.lastreq[code] = {}
+                            self.lastreq[code]['name'] = per[1]
+                            self.lastreq[code]['curr_price'] = float(per[3])
+                            self.lastreq[code]['today_highest'] = float(per[33])
+                            self.lastreq[code]['today_lowest'] = float(per[34])
+                            self.lastreq[code]['pct_chg'] = float(per[32])
+                            self.lastreq[code]['yestoday_close'] = float(per[4])
+                            self.lastreq[code]['today_open'] = float(per[5])
+
+                        # 创建事件循环对象
+                        sta = time.time()
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        loop = asyncio.get_event_loop()
+                        tasks = []
+                        for code in self.all_jk_buy_list:
+                            try:
+                                tasks.append(asyncio.ensure_future(buy_obj[code].jk_buy(self.lastreq[code], curr_time)))
+                            except Exception as e:
+                                self.logger.error(e)
+
+                        for code in self.all_jk_sale_list:
+                            try:
+                                tasks.append(asyncio.ensure_future(buy_obj[code].jk_sale(self.lastreq[code], curr_time)))
+                            except Exception as e:
+                                self.logger.error(e)
+
+                        if len(tasks) != 0:
+                            loop.run_until_complete(asyncio.wait(tasks))
+                        # print(curr_time, '  jk_end_time', time.time() - sta)
+
+                        id += 1
+
+            if curr_time.minute % 25 == 0 and curr_time.second % 59 == 0:
+                # print('get_basic_data is alive:', curr_time.time(), len(self.ser))
+                pass
+            if curr_time.hour >= 15 and curr_time.minute >= 2:
+                break
+
+            time.sleep(0.68)
+
+        # 更新当日trend_rec情况
+        self.update_trend_rec()
+
+        # 更新当日 整体盈利 情况
+        self.update_trend_noSale_money()
+
+    # 获取回测基础成交数据
+    def get_basic_backtest_data(self):
+        # 获取监控标的当日的交易数据，并整合
+        back_data_df = pd.DataFrame()
+        # print(self.all_jk_list)
+        wrong_codes = []
+        for code in self.all_jk_list:
+            file_path = f'./back_test/new_trend_data2/{self.today}/{code}.xlsx'
+            if os.path.exists(file_path):
+                try:
+                    temp_df = pd.read_excel(file_path)
+                    # temp_df['code'] = code
+                    # print(temp_df)
+                    back_data_df['time'] = temp_df['time']
+                    back_data_df[code] = temp_df['curr_price']  # back_data_df = pd.merge(back_data_df, temp_df, how='inner')  # back_data_df = back_data_df.append(temp_df, ignore_index=True)
+                except Exception as e:
+                    print(e)
+                    wrong_codes.append(code)
+        if len(wrong_codes) > 0:
+            for code in wrong_codes:
+                if code in self.all_jk_list:
+                    self.all_jk_list.remove(code)
+
+                if code in self.all_jk_buy_list:
+                    self.all_jk_buy_list.remove(code)
+                if code in self.all_jk_buy_list:
+                    self.all_jk_buy_list.remove(code)
+
+        all_jk_low_lst = {code: 999 for code in self.all_jk_list}
+        all_jk_high_lst = {code: -1 for code in self.all_jk_list}
+
+        # 创建单个标的对象
+        buy_obj = {}
+        for code in self.all_jk_list:
+            try:
+                buy_obj[code] = trend_one(code, self)
+            except Exception as e:
+                self.logger.error(e)
+
+        for index in range(0, 19801):
+            try:
+                # print('len*******************', len(back_data_df))
+                per = back_data_df.iloc[index]
+                if int(per['time']) > 113000 and int(per['time']) < 130000:
+                    continue
+                curr_time = self.today + str(int(per['time']))
+                del per['time']
+                self.ser = per
+                self.lastreq = {code: {} for code in self.all_jk_list}
+                self.lastreq['curr_time'] = datetime.datetime.strptime(curr_time.zfill(6), '%Y-%m-%d%H%M%S')
+
+                for k, p in self.ser.items():
+                    # 记录最大值和最小值
+                    if all_jk_low_lst[k] > p:
+                        all_jk_low_lst[k] = p
+
+                    if all_jk_high_lst[k] < p:
+                        all_jk_high_lst[k] = p
+
+                    # 头几秒可能是空值nan
+                    if pd.isna(p):
+                        p = 0
+
+                    self.lastreq[k]['curr_price'] = p
+                    self.lastreq[k]['today_highest'] = all_jk_high_lst[k]
+                    self.lastreq[k]['today_lowest'] = all_jk_low_lst[k]
+
+                sta = time.time()
+
+                tasks = []
+                # 创建事件循环对象
+                loop = asyncio.get_event_loop()
+
+                for code in self.all_jk_buy_list:
+                    try:
+                        tasks.append(asyncio.ensure_future(buy_obj[code].jk_buy(self.lastreq[code], self.lastreq['curr_time'])))
+                    except Exception as e:
+                        self.logger.error(e)
+
+                for code in self.all_jk_sale_list:
+                    try:
+                        tasks.append(asyncio.ensure_future(buy_obj[code].jk_sale(self.lastreq[code], self.lastreq['curr_time'])))
+                    except Exception as e:
+                        self.logger.error(e)
+
+                if len(tasks) != 0:
+                    loop.run_until_complete(asyncio.wait(tasks))  # print(curr_time, '  jk_buy_end_time', time.time() - sta)
+            except Exception as e:
+                self.logger.error(e)
+
+        # 更新当日trend_rec情况
+        self.update_trend_rec()
+
+        # 更新当日 整体盈利 情况
+        self.update_trend_noSale_money()
+
+    # 获取mongo基础成交数据
+    def get_basic_mongo_data(self):
+        pass
+
+    def basic_data2mongo(self, id, curr_time, ser, lastreq):
+        data = {}
+        data['id'] = id
+        data['date'] = self.today
+        data['curr_time'] = str(curr_time)
+        data['ser'] = str(ser)
+        data['lastreq'] = str(lastreq)
+        self.basic_data_store.insert_one(data)
+
+    def dp(self):
+        while True:
+            # 每秒获取逐笔交易数据
+            curr_time = datetime.datetime.now()
+            if curr_time.hour >= 9 and curr_time.hour <= 15:
+                if (curr_time.hour == 11 and curr_time.minute > 30) or curr_time.hour == 12:
+                    continue
+                elif curr_time.hour >= 15 and curr_time.minute > 3:
+                    break
+                elif (curr_time.hour == 9 and curr_time.minute >= 25) or curr_time.hour >= 10:
+                    # 获取当日两市上涨概况
+                    url = 'http://qt.gtimg.cn/?q=s_sz399001,s_sz399300,s_sh000016,s_sz399004,bkqtRank_A_sh,bkqtRank_B_sh,bkqtRank_A_sz,bkqtRank_B_sz&_=1595790947726'
+                    res = req.get(url)
+                    res = re.split(';', res.text)
+                    sh = re.split('~', res[4])
+                    sz = re.split('~', res[6])
+                    # 获取沪市上涨的股票
+                    sh_url = 'http://stock.gtimg.cn/data/view/rank.php?t=rankash/chr&p=1&o=0&l=' + str(int(sh[2])) + '&v=list_data'
+                    sh_res = req.get(sh_url)
+                    sh_res = re.split("'", sh_res.text)
+                    sh_res = re.split(',', sh_res[3])
+
+                    # 获取深市上涨的股票
+                    sz_url = 'http://stock.gtimg.cn/data/view/rank.php?t=rankasz/chr&p=1&o=0&l=' + str(int(sz[2])) + '&v=list_data'
+                    sz_res = req.get(sz_url)
+                    sz_res = re.split("'", sz_res.text)
+                    sz_res = re.split(',', sz_res[3])
+                    codelist2 = sh_res + sz_res
+
+                    # 获取红盘占比，得到市场的情绪
+                    all_sh = 1951
+                    all_sz = 2469
+
+                    self.pct_sh = len(sh_res) / all_sh
+                    self.pct_sz = len(sz_res) / all_sz
+
+                    # return pct_sh,pct_sz
+
+            if curr_time.hour >= 15 and curr_time.minute >= 1:
+                break
+
+            time.sleep(1)
+
+    def get_ma(self, code):
+        # 获取历史交易的收盘价，最高价格，最低价，用于计算均价
+        self.code_df = self.all_trend_df[self.all_trend_df['ts_code'] == code]
+        ma_dict = {}
+        try:
+            ma_dict['beili'] = self.code_df['beili'].values[0]
+            ma_dict['trd_days'] = self.code_df['trd_days'].values[0]
+            ma_dict['sum_ma4'] = self.code_df['sum4'].values[0]
+            ma_dict['sum_ma5'] = self.code_df['sum5'].values[0]
+            ma_dict['sum_ma6'] = self.code_df['sum6'].values[0]
+            ma_dict['sum_ma7'] = self.code_df['sum7'].values[0]
+            ma_dict['sum_ma8'] = self.code_df['sum8'].values[0]
+            ma_dict['yes2_ma5'] = self.code_df['yes2_ma5'].values[0]
+            ma_dict['yes1_ma5'] = self.code_df['yes1_ma5'].values[0]
+            ma_dict['yes1_ma4'] = self.code_df['yes1_ma4'].values[0]
+            ma_dict['yes2_ma4'] = self.code_df['yes2_ma4'].values[0]
+            ma_dict['yes1_ma6'] = self.code_df['yes1_ma6'].values[0]
+            ma_dict['yes2_ma6'] = self.code_df['yes2_ma6'].values[0]
+            ma_dict['yes1_ma7'] = self.code_df['yes1_ma7'].values[0]
+            ma_dict['yes2_ma7'] = self.code_df['yes2_ma7'].values[0]
+            ma_dict['yes1_ma8'] = self.code_df['yes1_ma8'].values[0]
+            ma_dict['yes2_ma8'] = self.code_df['yes2_ma8'].values[0]
+            ma_dict['yes1_close'] = self.code_df['yes1_close'].values[0]
+            ma_dict['yes2_close'] = self.code_df['yes2_close'].values[0]
+            ma_dict['yes1_lowest'] = self.code_df['yes1_lowest'].values[0]
+            ma_dict['yes2_lowest'] = self.code_df['yes2_lowest'].values[0]
+            ma_dict['yes1_highest'] = self.code_df['yes1_highest'].values[0]
+            ma_dict['yes2_highest'] = self.code_df['yes2_highest'].values[0]
+
+            ma_dict['yes1_macd'] = self.code_df['yes1_macd'].values[0]
+            ma_dict['yes2_macd'] = self.code_df['yes2_macd'].values[0]
+
+            ma_dict['trend3'] = self.code_df['trend3'].values[0]
+            ma_dict['trend4'] = self.code_df['trend4'].values[0]
+            ma_dict['trend5'] = self.code_df['trend5'].values[0]
+            ma_dict['trend6'] = self.code_df['trend6'].values[0]
+
+            ma_dict['trend8'] = self.code_df['trend8'].values[0]
+            ma_dict['trend9'] = self.code_df['trend9'].values[0]
+            ma_dict['trend10'] = self.code_df['trend10'].values[0]
+
+            ma_dict['trend12'] = self.code_df['trend12'].values[0]
+            ma_dict['trend13'] = self.code_df['trend13'].values[0]
+            ma_dict['trend14'] = self.code_df['trend14'].values[0]
+
+            ma_dict['trend20'] = self.code_df['trend20'].values[0]
+            ma_dict['trend50'] = self.code_df['trend50'].values[0]
+        except IndexError as e:
+            try:
+                print('code:', code)
+                print('today:', self.today)
+                print('today:', self.today)
+                print('len(self.all_trend_df)', len(self.all_trend_df))
+                print("len(self.all_trend_df[self.all_trend_df['ts_code'] == code])", len(self.all_trend_df[self.all_trend_df['ts_code'] == code]))
+                print("self.all_trend_df[self.all_trend_df['ts_code'] == code]", self.all_trend_df[self.all_trend_df['ts_code'] == code])
+            except Exception as e:
+                print(e)
+
+        return ma_dict
+
+    def calculate_profit_one(self, code):
+
+        # 获取昨日清仓盈利情况,昨日可能买了一笔，可能买了多笔
+        hasSale = self.trend_rec.find({'code': code, 'isSold': 1})
+        noSale = self.trend_rec.find({'code': code, 'isSold': 0})
+        hasSale_yingkui = 0
+        noSale_yingkui = 0
+        sale_money = 0
+        noSale_money = 0
+        for y in hasSale:
+            hasSale_yingkui += y['yingkui']
+            sale_money += y['money']
+        for k in noSale:
+            noSale_yingkui += k['yingkui']
+            noSale_money += k['money']
+
+        # 更新到总表里
+        total_yingkui = noSale_yingkui + hasSale_yingkui
+        # self.allList.update_one({'code': code}, {'$set': {'yingkui': total_yingkui}})
+        self.logger.info('截止' + str(self.today) + ' 日 ' + str(code) + ' 盈亏：' + str(total_yingkui) + ' 未卖出金额：' + str(noSale_money) + ' 已卖出金额：' + str(sale_money))
+
+    def calculate_profit(self):
+
+        # 获取昨日清仓盈利情况,昨日可能买了一笔，可能买了多笔
+        hasSale = self.trend_rec.find({'isSold': 1})
+        noSale = self.trend_rec.find({'isSold': 0})
+        hasSale_yingkui = 0
+        noSale_yingkui = 0
+        sale_money = 0
+        noSale_money = 0
+        for y in hasSale:
+            hasSale_yingkui += y['yingkui']
+            sale_money += y['money']
+        for k in noSale:
+            noSale_yingkui += k['yingkui']
+            noSale_money += k['money']
+
+        # 更新到总表里
+        total_yingkui = noSale_yingkui + hasSale_yingkui
+        # self.allList.update_one({'code': code}, {'$set': {'yingkui': total_yingkui}})
+        self.logger.info('截止' + str(self.today) + ' 总盈亏：' + str(total_yingkui) + ' 未卖出金额：' + str(noSale_money) + ' 已卖出金额：' + str(sale_money))
+
+    def get_reality_cangwei(self):
+        while True:
+            curr_time = datetime.datetime.now()
+            if curr_time.minute % 25 == 0 and curr_time.second % 59 == 0:
+                # print("get_reality_cangwei is alive: ", curr_time)
+                pass
+            time.sleep(1)
+            if curr_time.hour >= 9 and curr_time.hour <= 14:
+                if (curr_time.hour == 11 and curr_time.minute > 30) or curr_time.hour == 12:
+                    continue
+                elif curr_time.hour >= 15 and curr_time.minute > 1:
+                    break
+                elif (curr_time.hour == 9 and curr_time.minute >= 36) or curr_time.hour >= 10:
+
+                    if curr_time.minute % 18 == 0 and curr_time.second % 39 == 0:
+                        self.trend_reality.drop()
+                        self.trader.driver.find_element_by_xpath('//*[@id="main"]/div/div[2]/div[1]/ul/li[1]/a').click()
+                        buy_btn = self.trader.wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tabBody"]')))
+                        if buy_btn:
+                            res = self.trader.driver.find_element_by_xpath('//*[@id="tabBody"]')
+                            res = res.text.split('\n')
+                            for r in res:
+                                per = r.split(' ')
+                                if len(per) != 12:
+                                    continue
+                                # print(per)
+                                # 更新当前实际持仓情况
+                                self.trend_reality.insert_one({'code': self.chg_code_type(per[0]), 'hNum': per[2], 'uNum': per[3], 'money': per[6], 'cost': per[4], 'price': per[5], 'pct': per[8], 'yingkui': per[7]})
+
+                                # 查询系统期望可用持仓情况（可用持仓情况只需要查询trend_rec, 不可用持仓则查看hasbuy）
+                                mongo_res = self.trend_rec.find({'code': self.chg_code_type(per[0]), 'isSold': 0})
+                                mongo_num = 0
+                                if mongo_res:
+                                    for m in mongo_res:
+                                        mongo_num += m['left_num']
+
+                                    if int(per[3]) > int(mongo_num) and per[0][0] not in ['5', '1']:
+                                        # 卖出不一致仓位
+                                        sold_num = int(per[3]) - int(mongo_num)
+                                        sale_price = round(float(per[5]) * 0.99, 2)
+                                        try:
+                                            sold_num = 'all' if sold_num <= 100 else int(sold_num / 100) * 100
+                                            with self.trade_lock:
+                                                res = self.trader.auto_sale_chrome(self.chg_code_type(per[0]), sale_price, sold_num)
+                                                self.logger.info(f"sold_point_get_reality_cangwei: {self.chg_code_type(per[0])}, curr_price:{float(per[5])}, num:{sold_num}, response:{res}")  # # send_notice('sold_point_get_reality_cangwei_success', f"sold_point_get_reality_cangwei: {self.chg_code_type(per[0])}, curr_price:{float(per[5])}, num:{sold_num}, response:{res}")  # time.sleep(5)
+                                        except Exception as e:
+                                            self.logger.error(f"sold_point_get_reality_cangwei: {self.chg_code_type(per[0])}, time:{curr_time}, sold_type:卖出不一致, e:{e}")  # # send_notice('sold_point_get_reality_cangwei_faild', f"sold_point_get_reality_cangwei: {self.chg_code_type(per[0])}, time:{curr_time}, sold_type:卖出不一致, e:{e}")  # time.sleep(5)
+
+    def update_trend_rec(self):
+        # 更新当日trend_rec情况
+        if self.run_type == 'backtest':
+            today_hasBuy = self.hasBuy.find({'buy_date': self.today})
+            for thb in today_hasBuy:
+                print(thb)
+                k = thb['code']
+                num = 0
+                buyMoney = 0
+                hasBuy = self.hasBuy.find({'code': k, 'buy_date': self.today})
+                curr_time = datetime.datetime.now()
+                bts = 0
+
+                for h in hasBuy:
+                    num += h['num']
+                    buyMoney += h['money']
+                    bts += 1
+                if num != 0:
+                    cost = round(buyMoney / num, 4)
+                    print({'code': k, 'price': cost, 'time': str(curr_time), 'buy_date': self.today, 'bt': 1, 'money': buyMoney, 'isSold': 0, 'cost': cost, 'num': num, 'pct_bt': 0, 'yingkui': 0, 'highest_price': cost})
+                    count = self.trend_rec.count_documents({'code': k, 'buy_date': self.today})
+
+                    if count == 0 and num != 0:
+                        self.trend_rec.insert_one({'code': k, 'price': cost, 'curr_price': self.lastreq[k]['curr_price'], 'time': str(curr_time), 'buy_date': self.today, 'bt': 1, 'money': buyMoney, 'isSold': 0, 'cost': cost, 'num': num, 'pct_bt': 0, 'yingkui': 0, 'yingkui1': 0, 'yingkui2': 0, 'yingkui3': 0, 'left_num': num, 'bts': bts, 'st': 0, 'highest_price': cost})  # 获取每支个股最近插入的背离数据
+
+        elif self.run_type == 'trading':
+            today_hasBuy = self.hasBuy.find({'buy_date': self.today})
+            for thb in today_hasBuy:
+                print(thb)
+                k = thb['code']
+                num = 0
+                buyMoney = 0
+                hasBuy = self.hasBuy.find({'code': k, 'buy_date': self.today})
+                curr_time = datetime.datetime.now()
+                bts = 0
+
+                for h in hasBuy:
+                    num += h['num']
+                    buyMoney += h['money']
+                    bts += 1
+                if num != 0:
+                    cost = round(buyMoney / num, 4)
+                    print({'code': k, 'price': cost, 'time': str(curr_time), 'buy_date': self.today, 'bt': 1, 'money': buyMoney, 'isSold': 0, 'cost': cost, 'num': num, 'pct_bt': 0, 'yingkui': 0, 'highest_price': cost})
+                    count = self.trend_rec.count_documents({'code': k, 'buy_date': self.today})
+
+                    if count == 0 and num != 0:
+                        self.trend_rec.insert_one({'code': k, 'price': cost, 'curr_price': self.lastreq[k]['curr_price'], 'time': str(curr_time), 'buy_date': self.today, 'bt': 1, 'money': buyMoney, 'isSold': 0, 'cost': cost, 'num': num, 'pct_bt': 0, 'yingkui': 0, 'yingkui1': 0, 'yingkui2': 0, 'yingkui3': 0, 'left_num': num, 'bts': bts, 'st': 0, 'highest_price': cost})  # 获取每支个股最近插入的背离数据
+
+    def update_trend_noSale_money(self):
+        if self.run_type == 'backtest':
+            file_name = str(os.path.basename(__file__).split('.')[0])
+
+            res_nosale_money = self.fd[file_name + 'trend_rec'].find({'isSold': 0})
+            res_sale_money = self.fd[file_name + 'trend_rec'].find({'isSold': 1})
+
+            today_nosale_money = 0
+            today_sale_money = 0
+            today_total_yingkui = 0
+            for r in res_nosale_money:
+                today_nosale_money += r['left_num'] * r['price']
+                today_total_yingkui += (r['yingkui1'] + r['yingkui2'] + r['yingkui3'] + r['left_num'] * (r['curr_price'] - r['cost']))
+            for r in res_sale_money:
+                today_sale_money += r['money']
+                today_total_yingkui += r['yingkui']
+
+            yes_info = self.fd[file_name + 'noSale_money'].find_one({'date': self.yestoday})
+
+            if not yes_info:
+                highest_yingkui = today_total_yingkui
+                huicelv = 0
+                highest_huicelv = 0
+            elif (yes_info and yes_info['highest_yingkui'] < today_total_yingkui) or not yes_info:
+                highest_yingkui = today_total_yingkui
+                huicelv = 0
+                highest_huicelv = yes_info['highest_huicelv']
+            else:
+                highest_yingkui = yes_info['highest_yingkui']
+                huicelv = abs(round((yes_info['highest_yingkui'] - today_total_yingkui) / yes_info['highest_yingkui'], 3))
+                if yes_info['highest_huicelv'] < huicelv:
+                    highest_huicelv = huicelv
+                else:
+                    highest_huicelv = yes_info['highest_huicelv']
+
+            self.fd[file_name + 'noSale_money'].insert_one({'date': self.today, 'noSale_money': today_nosale_money, 'sale_money': today_sale_money, 'yingkui': today_total_yingkui, 'highest_yingkui': highest_yingkui, 'huicelv': huicelv, 'highest_huicelv': highest_huicelv})
+
+        elif self.run_type == 'trading':
+            res_nosale_money = self.fd['trend_rec'].find({'isSold': 0})
+            res_sale_money = self.fd['trend_rec'].find({'isSold': 1})
+
+            today_nosale_money = 0
+            today_sale_money = 0
+            today_total_yingkui = 0
+            for r in res_nosale_money:
+                today_nosale_money += r['left_num'] * r['price']
+                today_total_yingkui += (r['yingkui1'] + r['yingkui2'] + r['yingkui3'] + r['left_num'] * (r['curr_price'] - r['cost']))
+            for r in res_sale_money:
+                today_sale_money += r['money']
+                today_total_yingkui += r['yingkui']
+
+            self.fd['trend_noSale_money'].insert_one({'date': self.today, 'noSale_money': today_nosale_money, 'sale_money': today_sale_money, 'yingkui': today_total_yingkui})
+
+
+def drop_coll(run_type):
+    # 获取当前执行文件的名称
+    file_name = str(os.path.basename(__file__).split('.')[0])
+    # 连接mongoDB
+    myclient = pm.MongoClient("mongodb://localhost:27017/")
+    fd = myclient["freedom"]
+
+    fd.drop_collection(file_name + 'trend_rec')
+    # fd.drop_collection(file_name + '_beili')
+    fd.drop_collection(file_name + 'trend_has_buy')
+    fd.drop_collection(file_name + 'noSale_money')
+    fd.drop_collection(file_name + 'all_trd_jklist_backtest')
+
+    path = './' + file_name + '_log.xlsx'  # 文件路径
+    if os.path.exists(path):  # 如果文件存在
+        os.remove(path)
+    # path = './' + file_name + '_beili.xlsx'  # 文件路径
+    # if os.path.exists(path):  # 如果文件存在
+    #     os.remove(path)
+    path = './' + file_name + '_hasbuy.xlsx'  # 文件路径
+    if os.path.exists(path):  # 如果文件存在
+        os.remove(path)
+    path = './' + file_name + '_trade.xlsx'  # 文件路径
+    if os.path.exists(path):  # 如果文件存在
+        os.remove(path)
+
+
+def main(run_type):
+    if run_type == 'backtest':
+        drop_coll(run_type)
+        # 按交易日期寻找交易标的
+        trade_date = {1: ['2021-01-04', '2021-01-05', '2021-01-06', '2021-01-07', '2021-01-08', '2021-01-11', '2021-01-12', '2021-01-13', '2021-01-14', '2021-01-15', '2021-01-18', '2021-01-19', '2021-01-20', '2021-01-21', '2021-01-22', '2021-01-25', '2021-01-26', '2021-01-27', '2021-01-28', '2021-01-29'],
+                      2: ['2021-02-01', '2021-02-02', '2021-02-03', '2021-02-04', '2021-02-05', '2021-02-08', '2021-02-09', '2021-02-10', '2021-02-18', '2021-02-19', '2021-02-22', '2021-02-23', '2021-02-24', '2021-02-25', '2021-02-26'],
+                      3: ['2021-03-01', '2021-03-02', '2021-03-03', '2021-03-04', '2021-03-05', '2021-03-08', '2021-03-09', '2021-03-10', '2021-03-11', '2021-03-12', '2021-03-15', '2021-03-16', '2021-03-17', '2021-03-18', '2021-03-19', '2021-03-22', '2021-03-23', '2021-03-24', '2021-03-25', '2021-03-26', '2021-03-29', '2021-03-30', '2021-03-31'],
+                      4: ['2021-04-01', '2021-04-02', '2021-04-06', '2021-04-07', '2021-04-08', '2021-04-09', '2021-04-12', '2021-04-13', '2021-04-14', '2021-04-15', '2021-04-16', '2021-04-19', '2021-04-20', '2021-04-21', '2021-04-22', '2021-04-23', '2021-04-26', '2021-04-27', '2021-04-28', '2021-04-29', '2021-04-30'],
+                      5: ['2021-05-06', '2021-05-07', '2021-05-10', '2021-05-11', '2021-05-12', '2021-05-13', '2021-05-14', '2021-05-17', '2021-05-18', '2021-05-19', '2021-05-20', '2021-05-21', '2021-05-24', '2021-05-25', '2021-05-26', '2021-05-27', '2021-05-28', '2021-05-31'],
+                      6: ['2021-06-01', '2021-06-02', '2021-06-03', '2021-06-04', '2021-06-07', '2021-06-08', '2021-06-09', '2021-06-10', '2021-06-11', '2021-06-15', '2021-06-16', '2021-06-17', '2021-06-18', '2021-06-21', '2021-06-22', '2021-06-23', '2021-06-24', '2021-06-25', '2021-06-28', '2021-06-29', '2021-06-30'],
+                      7: ['2021-07-01', '2021-07-02', '2021-07-05', '2021-07-06', '2021-07-07', '2021-07-08', '2021-07-09', '2021-07-12', '2021-07-13', '2021-07-14', '2021-07-15', '2021-07-16', '2021-07-19', '2021-07-20', '2021-07-21', '2021-07-22', '2021-07-23', '2021-07-26', '2021-07-27', '2021-07-28', '2021-07-29', '2021-07-30'],
+                      8: ['2021-08-02', '2021-08-03', '2021-08-04', '2021-08-05', '2021-08-06', '2021-08-09', '2021-08-10', '2021-08-11', '2021-08-12', '2021-08-13', '2021-08-16', '2021-08-17', '2021-08-18', '2021-08-19', '2021-08-20', '2021-08-23', '2021-08-24', '2021-08-25', '2021-08-26', '2021-08-27', '2021-08-30', '2021-08-31'],
+                      9: ['2021-09-01', '2021-09-02', '2021-09-03', '2021-09-06', '2021-09-07', '2021-09-08', '2021-09-09', '2021-09-10', '2021-09-13', '2021-09-14', '2021-09-15', '2021-09-16', '2021-09-17', '2021-09-22', '2021-09-23', '2021-09-24', '2021-09-27', '2021-09-28', '2021-09-29', '2021-09-30'],
+                      10: ['2021-10-08', '2021-10-11', '2021-10-12', '2021-10-13', '2021-10-14', '2021-10-15', '2021-10-18', '2021-10-19', '2021-10-20', '2021-10-21', '2021-10-22', '2021-10-25', '2021-10-26', '2021-10-27', '2021-10-28', '2021-10-29'],
+                      11: ['2021-11-01', '2021-11-02', '2021-11-03', '2021-11-04', '2021-11-05', '2021-11-08', '2021-11-09', '2021-11-10', '2021-11-11', '2021-11-12', '2021-11-15', '2021-11-16', '2021-11-17', '2021-11-18', '2021-11-19', '2021-11-22', '2021-11-23', '2021-11-24', '2021-11-25', '2021-11-26', '2021-11-29', '2021-11-30'],
+                      12: ['2021-12-01', '2021-12-02', '2021-12-03', '2021-12-06', '2021-12-07', '2021-12-08', '2021-12-09', '2021-12-10', '2021-12-13', '2021-12-14', '2021-12-15', '2021-12-16', '2021-12-17', '2021-12-20', '2021-12-21', '2021-12-22', '2021-12-23', '2021-12-24', '2021-12-27', '2021-12-28', '2021-12-29', '2021-12-30', '2021-12-31']}
+
+        trade_date_list = []
+        for t in range(1, 13):
+            trade_date_list += trade_date[t]
+
+        # 读取所有的买点, 根据标的情况，创建交易买进程
+        index = 0
+        for today in trade_date_list:
+            # 提取日期 today, yestoday
+            if today == '2021-01-04':
+                yestoday = '2020-12-31'
+            else:
+                yestoday = trade_date_list[index - 1]
+
+            index += 1
+
+            # today_int = int(f"{today[0:4]}{today[5:7]}{today[8:]}")
+            # if today_int < 20210615:
+            #     continue
+
+            jk_buy_lst = list(pd.read_excel(f'./find_trend/backtest_k_daily3/jk_buy_list/{today}.xlsx')['ts_code'])
+
+            print('*' * 88)
+            print(today, yestoday, len(jk_buy_lst))
+            print('*' * 88)
+
+            trend = Trend(today, yestoday, run_type, jk_buy_lst)
+
+            trend.get_basic_backtest_data()
+
+        # 完成回测后，导出数据情况：
+        file_name = str(os.path.basename(__file__).split('.')[0])
+        trend = Trend('2021-01-04', '2020-12-31', run_type)
+        # 获取trend_rec数据
+        res_trend_info = trend.trend_rec.find()
+        total_trend_df = pd.DataFrame()
+        for r in res_trend_info:
+            r.pop('_id')
+            total_trend_df = total_trend_df.append(r, ignore_index=True)
+
+        total_trend_df.to_excel('./' + file_name + '_trade.xlsx')
+
+        # 获取hasbuy买明细
+        total_hasbuy_df = pd.DataFrame()
+        res_hasbuy = trend.hasBuy.find()
+        for r in res_hasbuy:
+            r.pop('_id')
+            total_hasbuy_df = total_hasbuy_df.append(r, ignore_index=True)
+
+        total_hasbuy_df.to_excel('./' + file_name + '_hasbuy.xlsx')
+
+        # 获取nosale 明细
+        detail_nosale_info = pd.DataFrame()
+        res_nosale = trend.fd[trend.file_name + 'noSale_money'].find()
+        for r in res_nosale:
+            r.pop('_id')
+            detail_nosale_info = detail_nosale_info.append(r, ignore_index=True)
+
+        detail_nosale_info.to_excel('./' + file_name + '_log.xlsx')
+
+    elif run_type == 'trading':
+        today = str(datetime.datetime.now().date())
+        trend = Trend(today, '2022-10-18', run_type)
+
+        thr1 = thr.Thread(target=trend.get_basic_data)
+        thr4 = thr.Thread(target=trend.keep_login)
+        thr5 = thr.Thread(target=trend.get_reality_cangwei)
+
+        thr1.start()
+        thr4.start()
+        thr5.start()
+
+
+if __name__ == '__main__':
+    # 配置runtype: backtest|trading
+    run_type = 'backtest'
+    main(run_type)
